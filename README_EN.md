@@ -1,5 +1,10 @@
 # Claude Relay Service
 
+> [!CAUTION]
+> **Security Update**: v1.1.248 and below contain a critical admin authentication bypass vulnerability allowing unauthorized access to the admin panel.
+>
+> **Please update to v1.1.249+ immediately**, or migrate to the next-generation project **[CRS 2.0 (sub2api)](https://github.com/Wei-Shaw/sub2api)**
+
 <div align="center">
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -9,7 +14,7 @@
 
 **🔐 Self-hosted Claude API relay service with multi-account management** 
 
-[English](#english) • [中文文档](#中文文档) • [📸 Interface Preview](docs/preview.md) • [📢 Telegram Channel](https://t.me/claude_relay_service)
+[中文文档](README.md) • [Preview](https://demo.pincc.ai/admin-next/login) • [Telegram Channel](https://t.me/claude_relay_service)
 
 </div>
 
@@ -29,17 +34,6 @@
 🚨 **Terms of Service Risk**: Using this project may violate Anthropic's terms of service. Please carefully read Anthropic's user agreement before use. All risks from using this project are borne by the user.
 
 📖 **Disclaimer**: This project is for technical learning and research purposes only. The author is not responsible for any account bans, service interruptions, or other losses caused by using this project.
-
----
-
-> 💡 **Thanks to [@vista8](https://x.com/vista8) for the recommendation!**
-> 
-> If you're interested in Vibe coding, follow:
-> 
-> - 🐦 **X**: [@vista8](https://x.com/vista8) - Sharing cutting-edge tech trends
-> - 📱 **WeChat**: 向阳乔木推荐看  
-
----
 
 ## 🤔 Is This Project Right for You?
 
@@ -233,6 +227,31 @@ This step is quite important, requires OAuth authorization:
 
 **Note**: If you're in China, this step may require VPN.
 
+### 2.1 Temporary Pause (503/5xx) and Account-Level TTL Overrides
+
+When upstream errors happen, the router can temporarily pause an account. Global defaults are controlled by `.env.example`:
+
+- `UPSTREAM_ERROR_503_TTL_SECONDS`
+- `UPSTREAM_ERROR_5XX_TTL_SECONDS`
+- `UPSTREAM_ERROR_OVERLOAD_TTL_SECONDS`
+- `UPSTREAM_ERROR_AUTH_TTL_SECONDS`
+- `UPSTREAM_ERROR_TIMEOUT_TTL_SECONDS`
+
+For **Claude official OAuth accounts**, you can override policy per account in Admin UI:
+
+- `Disable temporary cooldown for this account`: skip 503/5xx temp pause for this account
+- `503 cooldown seconds`: empty = follow global default, `0` = disable 503 cooldown for this account
+- `5xx cooldown seconds`: empty = follow global default, `0` = disable 5xx cooldown for this account
+
+Priority order (high to low):
+
+1. Account-level "disable temporary cooldown"
+2. Account-level 503/5xx cooldown override
+3. Call-site custom TTL (if provided)
+4. Global env default TTL
+
+In Accounts view, "Routing blocked reason" shows error type, HTTP status, total cooldown, remaining time, and recovery time. Use `Reset Status` to clear abnormal state and restore routing eligibility.
+
 ### 3. Create API Key
 
 Assign a key to each user:
@@ -243,19 +262,66 @@ Assign a key to each user:
 4. Set usage limits (optional)
 5. Save, note down the generated key
 
-### 4. Start Using Claude Code
+### 4. Start Using Claude Code and Gemini CLI
 
 Now you can replace the official API with your own service:
 
-**Set environment variables:**
+**Claude Code Set Environment Variables:**
+
+Default uses standard Claude account pool:
+
 ```bash
-export ANTHROPIC_BASE_URL="http://127.0.0.1:3000/api/" # Fill in your server's IP address or domain according to actual situation
+export ANTHROPIC_BASE_URL="http://127.0.0.1:3000/api/" # Fill in your server's IP address or domain
 export ANTHROPIC_AUTH_TOKEN="API key created in the backend"
 ```
 
-**Use claude:**
+**VSCode Claude Plugin Configuration:**
+
+If using VSCode Claude plugin, configure in `~/.claude/config.json`:
+
+```json
+{
+    "primaryApiKey": "crs"
+}
+```
+
+If the file doesn't exist, create it manually. Windows users path is `C:\Users\YourUsername\.claude\config.json`.
+
+**Gemini CLI Set Environment Variables:**
+
+**Method 1 (Recommended): Via Gemini Assist API**
+
+Each account enjoys 1000 requests per day, 60 requests per minute free quota.
+
+```bash
+CODE_ASSIST_ENDPOINT="http://127.0.0.1:3000/gemini"  # Fill in your server's IP address or domain
+GOOGLE_CLOUD_ACCESS_TOKEN="API key created in the backend"
+GOOGLE_GENAI_USE_GCA="true"
+GEMINI_MODEL="gemini-2.5-pro"
+```
+
+> **Note**: gemini-cli console will show `Failed to fetch user info: 401 Unauthorized`, but this doesn't affect usage.
+
+**Method 2: Via Gemini API**
+
+Very limited free quota, easily triggers 429 errors.
+
+```bash
+GOOGLE_GEMINI_BASE_URL="http://127.0.0.1:3000/gemini"  # Fill in your server's IP address or domain
+GEMINI_API_KEY="API key created in the backend"
+GEMINI_MODEL="gemini-2.5-pro"
+```
+
+**Use Claude Code:**
+
 ```bash
 claude
+```
+
+**Use Gemini CLI:**
+
+```bash
+gemini
 ```
 
 ---
@@ -338,13 +404,18 @@ redis-cli ping
 
 ## 🛠️ Advanced Usage
 
-### Production Deployment Recommendations (Important!)
+### Reverse Proxy Deployment Guide
 
-**Strongly recommend using Caddy reverse proxy (Automatic HTTPS)**
+For production environments, it is recommended to use a reverse proxy for automatic HTTPS, security headers, and performance optimization. Two common solutions are provided below: **Caddy** and **Nginx Proxy Manager (NPM)**.
 
-Recommend using Caddy as reverse proxy, it will automatically apply and renew SSL certificates with simpler configuration:
+---
+
+## Caddy Solution
+
+Caddy is a web server that automatically manages HTTPS certificates, with simple configuration and excellent performance, ideal for deployments without Docker environments.
 
 **1. Install Caddy**
+
 ```bash
 # Ubuntu/Debian
 sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https
@@ -359,29 +430,30 @@ sudo yum copr enable @caddy/caddy
 sudo yum install caddy
 ```
 
-**2. Caddy Configuration (Super Simple!)**
+**2. Caddy Configuration**
 
 Edit `/etc/caddy/Caddyfile`:
-```
+
+```caddy
 your-domain.com {
     # Reverse proxy to local service
     reverse_proxy 127.0.0.1:3000 {
-        # Support streaming responses (SSE)
+        # Support streaming responses or SSE
         flush_interval -1
-        
+
         # Pass real IP
         header_up X-Real-IP {remote_host}
         header_up X-Forwarded-For {remote_host}
         header_up X-Forwarded-Proto {scheme}
-        
-        # Timeout settings (suitable for long connections)
+
+        # Long read/write timeout configuration
         transport http {
             read_timeout 300s
             write_timeout 300s
             dial_timeout 30s
         }
     }
-    
+
     # Security headers
     header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains"
@@ -393,38 +465,131 @@ your-domain.com {
 ```
 
 **3. Start Caddy**
-```bash
-# Test configuration
-sudo caddy validate --config /etc/caddy/Caddyfile
 
-# Start service
+```bash
+sudo caddy validate --config /etc/caddy/Caddyfile
 sudo systemctl start caddy
 sudo systemctl enable caddy
-
-# Check status
 sudo systemctl status caddy
 ```
 
-**4. Update service configuration**
+**4. Service Configuration**
 
-Modify your service configuration to listen only locally:
+Since Caddy automatically manages HTTPS, you can restrict the service to listen locally only:
+
 ```javascript
 // config/config.js
 module.exports = {
   server: {
     port: 3000,
-    host: '127.0.0.1'  // Listen only locally, proxy through nginx
+    host: '127.0.0.1' // Listen locally only
   }
-  // ... other configurations
 }
 ```
 
-**Caddy Advantages:**
-- 🔒 **Automatic HTTPS**: Automatically apply and renew Let's Encrypt certificates, zero configuration
-- 🛡️ **Secure by Default**: Modern security protocols and cipher suites enabled by default
-- 🚀 **Streaming Support**: Native support for SSE/WebSocket streaming
-- 📊 **Simple Configuration**: Extremely concise configuration files, easy to maintain
-- ⚡ **HTTP/2**: HTTP/2 enabled by default for improved performance
+**Caddy Features**
+
+* 🔒 Automatic HTTPS with zero-configuration certificate management
+* 🛡️ Secure default configuration with modern TLS suites
+* ⚡ HTTP/2 and streaming support
+* 🔧 Concise configuration files, easy to maintain
+
+---
+
+## Nginx Proxy Manager (NPM) Solution
+
+Nginx Proxy Manager manages reverse proxies and HTTPS certificates through a graphical interface, deployed as a Docker container.
+
+**1. Create a New Proxy Host in NPM**
+
+Configure the Details as follows:
+
+| Item                  | Setting                  |
+| --------------------- | ------------------------ |
+| Domain Names          | relay.example.com        |
+| Scheme                | http                     |
+| Forward Hostname / IP | 192.168.0.1 (docker host IP) |
+| Forward Port          | 3000                     |
+| Block Common Exploits | ☑️                       |
+| Websockets Support    | ❌ **Disable**            |
+| Cache Assets          | ❌ **Disable**            |
+| Access List           | Publicly Accessible      |
+
+> Note:
+> - Ensure Claude Relay Service **listens on `0.0.0.0`, container IP, or host IP** to allow NPM internal network connections.
+> - **Websockets Support and Cache Assets must be disabled**, otherwise SSE / streaming responses will fail.
+
+**2. Custom locations**
+
+No content needed, keep it empty.
+
+**3. SSL Settings**
+
+* **SSL Certificate**: Request a new SSL Certificate (Let's Encrypt) or existing certificate
+* ☑️ **Force SSL**
+* ☑️ **HTTP/2 Support**
+* ☑️ **HSTS Enabled**
+* ☑️ **HSTS Subdomains**
+
+**4. Advanced Configuration**
+
+Add the following to Custom Nginx Configuration:
+
+```nginx
+# Pass real user IP
+proxy_set_header X-Real-IP $remote_addr;
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+proxy_set_header X-Forwarded-Proto $scheme;
+
+# Support WebSocket / SSE streaming
+proxy_http_version 1.1;
+proxy_set_header Upgrade $http_upgrade;
+proxy_set_header Connection "upgrade";
+proxy_buffering off;
+
+# Long connection / timeout settings (for AI chat streaming)
+proxy_read_timeout 300s;
+proxy_send_timeout 300s;
+proxy_connect_timeout 30s;
+
+# ---- Security Settings ----
+# Strict HTTPS policy (HSTS)
+add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+# Block clickjacking and content sniffing
+add_header X-Frame-Options "DENY" always;
+add_header X-Content-Type-Options "nosniff" always;
+
+# Referrer / Permissions restriction policies
+add_header Referrer-Policy "no-referrer-when-downgrade" always;
+add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+
+# Hide server information (equivalent to Caddy's `-Server`)
+proxy_hide_header Server;
+
+# ---- Performance Tuning ----
+# Disable proxy caching for real-time responses (SSE / Streaming)
+proxy_cache_bypass $http_upgrade;
+proxy_no_cache $http_upgrade;
+proxy_request_buffering off;
+```
+
+**5. Launch and Verify**
+
+* After saving, wait for NPM to automatically request Let's Encrypt certificate (if applicable).
+* Check Proxy Host status in Dashboard to ensure it shows "Online".
+* Visit `https://relay.example.com`, if the green lock icon appears, HTTPS is working properly.
+
+**NPM Features**
+
+* 🔒 Automatic certificate application and renewal
+* 🔧 Graphical interface for easy multi-service management
+* ⚡ Native HTTP/2 / HTTPS support
+* 🚀 Ideal for Docker container deployments
+
+---
+
+Both solutions are suitable for production deployment. If you use a Docker environment, **Nginx Proxy Manager is more convenient**; if you want to keep software lightweight and automated, **Caddy is a better choice**.
 
 ---
 

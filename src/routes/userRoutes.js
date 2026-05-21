@@ -258,6 +258,8 @@ router.get('/api-keys', authenticateUser, async (req, res) => {
         usage: flatUsage,
         dailyCost: key.dailyCost,
         dailyCostLimit: key.dailyCostLimit,
+        totalCost: key.totalCost,
+        totalCostLimit: key.totalCostLimit,
         // 不返回实际的key值，只返回前缀和后几位
         keyPreview: key.key
           ? `${key.key.substring(0, 8)}...${key.key.substring(key.key.length - 4)}`
@@ -287,12 +289,24 @@ router.get('/api-keys', authenticateUser, async (req, res) => {
 // 🔑 创建新的API Key
 router.post('/api-keys', authenticateUser, async (req, res) => {
   try {
-    const { name, description, tokenLimit, expiresAt, dailyCostLimit } = req.body
+    const { name, description, tokenLimit, expiresAt, dailyCostLimit, totalCostLimit } = req.body
 
     if (!name || !name.trim()) {
       return res.status(400).json({
         error: 'Missing name',
         message: 'API key name is required'
+      })
+    }
+
+    if (
+      totalCostLimit !== undefined &&
+      totalCostLimit !== null &&
+      totalCostLimit !== '' &&
+      (Number.isNaN(Number(totalCostLimit)) || Number(totalCostLimit) < 0)
+    ) {
+      return res.status(400).json({
+        error: 'Invalid total cost limit',
+        message: 'Total cost limit must be a non-negative number'
       })
     }
 
@@ -314,8 +328,10 @@ router.post('/api-keys', authenticateUser, async (req, res) => {
       tokenLimit: tokenLimit || null,
       expiresAt: expiresAt || null,
       dailyCostLimit: dailyCostLimit || null,
+      totalCostLimit: totalCostLimit || null,
       createdBy: 'user',
-      permissions: ['messages'] // 用户创建的API Key默认只有messages权限
+      // 设置服务权限为全部服务，确保前端显示“服务权限”为“全部服务”且具备完整访问权限
+      permissions: 'all'
     }
 
     const newApiKey = await apiKeyService.createApiKey(apiKeyData)
@@ -336,6 +352,7 @@ router.post('/api-keys', authenticateUser, async (req, res) => {
         tokenLimit: newApiKey.tokenLimit,
         expiresAt: newApiKey.expiresAt,
         dailyCostLimit: newApiKey.dailyCostLimit,
+        totalCostLimit: newApiKey.totalCostLimit,
         createdAt: newApiKey.createdAt
       }
     })
@@ -740,6 +757,168 @@ router.get('/admin/ldap-test', authenticateUserOrAdmin, requireAdmin, async (req
     res.status(500).json({
       error: 'LDAP test error',
       message: 'Failed to test LDAP connection'
+    })
+  }
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 额度卡核销相关路由
+// ═══════════════════════════════════════════════════════════════════════════
+
+const quotaCardService = require('../services/quotaCardService')
+
+// 🎫 核销额度卡
+router.post('/redeem-card', authenticateUser, async (req, res) => {
+  try {
+    const { code, apiKeyId } = req.body
+
+    if (!code) {
+      return res.status(400).json({
+        error: 'Missing card code',
+        message: 'Card code is required'
+      })
+    }
+
+    if (!apiKeyId) {
+      return res.status(400).json({
+        error: 'Missing API key ID',
+        message: 'API key ID is required'
+      })
+    }
+
+    // 验证 API Key 属于当前用户
+    const keyData = await redis.getApiKey(apiKeyId)
+    if (!keyData || Object.keys(keyData).length === 0) {
+      return res.status(404).json({
+        error: 'API key not found',
+        message: 'The specified API key does not exist'
+      })
+    }
+
+    if (keyData.userId !== req.user.id) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'You can only redeem cards to your own API keys'
+      })
+    }
+
+    // 执行核销
+    const result = await quotaCardService.redeemCard(code, apiKeyId, req.user.id, req.user.username)
+
+    logger.success(`🎫 User ${req.user.username} redeemed card ${code} to key ${apiKeyId}`)
+
+    res.json({
+      success: true,
+      data: result
+    })
+  } catch (error) {
+    logger.error('❌ Redeem card error:', error)
+    res.status(400).json({
+      error: 'Redeem failed',
+      message: error.message
+    })
+  }
+})
+
+// 📋 获取用户的核销历史
+router.get('/redemption-history', authenticateUser, async (req, res) => {
+  try {
+    const { limit = 50, offset = 0 } = req.query
+
+    const result = await quotaCardService.getRedemptions({
+      userId: req.user.id,
+      limit: parseInt(limit),
+      offset: parseInt(offset)
+    })
+
+    res.json({
+      success: true,
+      data: result
+    })
+  } catch (error) {
+    logger.error('❌ Get redemption history error:', error)
+    res.status(500).json({
+      error: 'Failed to get redemption history',
+      message: error.message
+    })
+  }
+})
+
+// 📊 获取用户的额度信息
+router.get('/quota-info', authenticateUser, async (req, res) => {
+  try {
+    const { apiKeyId } = req.query
+
+    if (!apiKeyId) {
+      return res.status(400).json({
+        error: 'Missing API key ID',
+        message: 'API key ID is required'
+      })
+    }
+
+    // 验证 API Key 属于当前用户
+    const keyData = await redis.getApiKey(apiKeyId)
+    if (!keyData || Object.keys(keyData).length === 0) {
+      return res.status(404).json({
+        error: 'API key not found',
+        message: 'The specified API key does not exist'
+      })
+    }
+
+    if (keyData.userId !== req.user.id) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'You can only view your own API key quota'
+      })
+    }
+
+    // 检查是否为聚合 Key
+    if (keyData.isAggregated !== 'true') {
+      return res.json({
+        success: true,
+        data: {
+          isAggregated: false,
+          message: 'This is a traditional API key, not using quota system'
+        }
+      })
+    }
+
+    // 解析聚合 Key 数据
+    let permissions = []
+    let serviceQuotaLimits = {}
+    let serviceQuotaUsed = {}
+
+    try {
+      permissions = JSON.parse(keyData.permissions || '[]')
+    } catch (e) {
+      permissions = [keyData.permissions]
+    }
+
+    try {
+      serviceQuotaLimits = JSON.parse(keyData.serviceQuotaLimits || '{}')
+      serviceQuotaUsed = JSON.parse(keyData.serviceQuotaUsed || '{}')
+    } catch (e) {
+      // 解析失败使用默认值
+    }
+
+    res.json({
+      success: true,
+      data: {
+        isAggregated: true,
+        quotaLimit: parseFloat(keyData.quotaLimit || 0),
+        quotaUsed: parseFloat(keyData.quotaUsed || 0),
+        quotaRemaining: parseFloat(keyData.quotaLimit || 0) - parseFloat(keyData.quotaUsed || 0),
+        permissions,
+        serviceQuotaLimits,
+        serviceQuotaUsed,
+        expiresAt: keyData.expiresAt
+      }
+    })
+  } catch (error) {
+    logger.error('❌ Get quota info error:', error)
+    res.status(500).json({
+      error: 'Failed to get quota info',
+      message: error.message
     })
   }
 })

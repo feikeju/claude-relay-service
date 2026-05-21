@@ -1,18 +1,17 @@
 const winston = require('winston')
 const DailyRotateFile = require('winston-daily-rotate-file')
 const config = require('../../config/config')
+const { formatDateWithTimezone } = require('../utils/dateHelper')
 const path = require('path')
 const fs = require('fs')
 const os = require('os')
 
 // 安全的 JSON 序列化函数，处理循环引用和特殊字符
-const safeStringify = (obj, maxDepth = 3, fullDepth = false) => {
+const safeStringify = (obj, maxDepth = Infinity) => {
   const seen = new WeakSet()
-  // 如果是fullDepth模式，增加深度限制
-  const actualMaxDepth = fullDepth ? 10 : maxDepth
 
   const replacer = (key, value, depth = 0) => {
-    if (depth > actualMaxDepth) {
+    if (depth > maxDepth) {
       return '[Max Depth Reached]'
     }
 
@@ -20,17 +19,12 @@ const safeStringify = (obj, maxDepth = 3, fullDepth = false) => {
     if (typeof value === 'string') {
       try {
         // 移除或转义可能导致JSON解析错误的字符
-        let cleanValue = value
+        const cleanValue = value
           // eslint-disable-next-line no-control-regex
           .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '') // 移除控制字符
           .replace(/[\uD800-\uDFFF]/g, '') // 移除孤立的代理对字符
           // eslint-disable-next-line no-control-regex
           .replace(/\u0000/g, '') // 移除NUL字节
-
-        // 如果字符串过长，截断并添加省略号
-        if (cleanValue.length > 1000) {
-          cleanValue = `${cleanValue.substring(0, 997)}...`
-        }
 
         return cleanValue
       } catch (error) {
@@ -76,7 +70,37 @@ const safeStringify = (obj, maxDepth = 3, fullDepth = false) => {
 
   try {
     const processed = replacer('', obj)
-    return JSON.stringify(processed)
+    const result = JSON.stringify(processed)
+    // 体积保护: 超过 50KB 时对大字段做截断，保留顶层结构
+    if (result.length > 50000 && processed && typeof processed === 'object') {
+      const truncated = { ...processed, _truncated: true, _totalChars: result.length }
+      // 第一轮: 截断单个大字段
+      for (const [k, v] of Object.entries(truncated)) {
+        if (k.startsWith('_')) {
+          continue
+        }
+        const fieldStr = typeof v === 'string' ? v : JSON.stringify(v)
+        if (fieldStr && fieldStr.length > 10000) {
+          truncated[k] = `${fieldStr.substring(0, 10000)}...[truncated]`
+        }
+      }
+      // 第二轮: 如果总长度仍超 50KB，逐字段缩减到 2KB
+      let secondResult = JSON.stringify(truncated)
+      if (secondResult.length > 50000) {
+        for (const [k, v] of Object.entries(truncated)) {
+          if (k.startsWith('_')) {
+            continue
+          }
+          const fieldStr = typeof v === 'string' ? v : JSON.stringify(v)
+          if (fieldStr && fieldStr.length > 2000) {
+            truncated[k] = `${fieldStr.substring(0, 2000)}...[truncated]`
+          }
+        }
+        secondResult = JSON.stringify(truncated)
+      }
+      return secondResult
+    }
+    return result
   } catch (error) {
     // 如果JSON.stringify仍然失败，使用更保守的方法
     try {
@@ -92,50 +116,65 @@ const safeStringify = (obj, maxDepth = 3, fullDepth = false) => {
   }
 }
 
-// 📝 增强的日志格式
-const createLogFormat = (colorize = false) => {
-  const formats = [
-    winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-    winston.format.errors({ stack: true })
-    // 移除 winston.format.metadata() 来避免自动包装
-  ]
+// 控制台不显示的 metadata 字段（已在 message 中或低价值）
+const CONSOLE_SKIP_KEYS = new Set(['type', 'level', 'message', 'timestamp', 'stack'])
 
-  if (colorize) {
-    formats.push(winston.format.colorize())
-  }
+// 控制台格式: 树形展示 metadata
+const createConsoleFormat = () =>
+  winston.format.combine(
+    winston.format.timestamp({ format: () => formatDateWithTimezone(new Date(), false) }),
+    winston.format.errors({ stack: true }),
+    winston.format.colorize(),
+    winston.format.printf(({ level: _level, message, timestamp, stack, ...rest }) => {
+      // 时间戳只取时分秒
+      const shortTime = timestamp ? timestamp.split(' ').pop() : ''
 
-  formats.push(
-    winston.format.printf(({ level, message, timestamp, stack, ...rest }) => {
-      const emoji = {
-        error: '❌',
-        warn: '⚠️ ',
-        info: 'ℹ️ ',
-        debug: '🐛',
-        verbose: '📝'
+      let logMessage = `${shortTime} ${message}`
+
+      // 收集要显示的 metadata
+      const entries = Object.entries(rest).filter(([k]) => !CONSOLE_SKIP_KEYS.has(k))
+
+      if (entries.length > 0) {
+        const indent = ' '.repeat(shortTime.length + 1)
+        entries.forEach(([key, value], i) => {
+          const isLast = i === entries.length - 1
+          const branch = isLast ? '└─' : '├─'
+          const displayValue =
+            value !== null && typeof value === 'object' ? safeStringify(value) : String(value)
+          logMessage += `\n${indent}${branch} ${key}: ${displayValue}`
+        })
       }
 
-      let logMessage = `${emoji[level] || '📝'} [${timestamp}] ${level.toUpperCase()}: ${message}`
-
-      // 直接处理额外数据，不需要metadata包装
-      const additionalData = { ...rest }
-      delete additionalData.level
-      delete additionalData.message
-      delete additionalData.timestamp
-      delete additionalData.stack
-
-      if (Object.keys(additionalData).length > 0) {
-        logMessage += ` | ${safeStringify(additionalData)}`
+      if (stack) {
+        logMessage += `\n${stack}`
       }
-
-      return stack ? `${logMessage}\n${stack}` : logMessage
+      return logMessage
     })
   )
 
-  return winston.format.combine(...formats)
-}
+// 文件格式: NDJSON（完整结构化数据）
+const createFileFormat = () =>
+  winston.format.combine(
+    winston.format.timestamp({ format: () => formatDateWithTimezone(new Date(), false) }),
+    winston.format.errors({ stack: true }),
+    winston.format.printf(({ level, message, timestamp, stack, ...rest }) => {
+      const entry = { ts: timestamp, lvl: level, msg: message }
+      // 合并所有 metadata
+      for (const [k, v] of Object.entries(rest)) {
+        if (k !== 'level' && k !== 'message' && k !== 'timestamp' && k !== 'stack') {
+          entry[k] = v
+        }
+      }
+      if (stack) {
+        entry.stack = stack
+      }
+      return safeStringify(entry)
+    })
+  )
 
-const logFormat = createLogFormat(false)
-const consoleFormat = createLogFormat(true)
+const fileFormat = createFileFormat()
+const consoleFormat = createConsoleFormat()
+const isTestEnv = process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID
 
 // 📁 确保日志目录存在并设置权限
 if (!fs.existsSync(config.logging.dirname)) {
@@ -151,25 +190,27 @@ const createRotateTransport = (filename, level = null) => {
     maxSize: config.logging.maxSize,
     maxFiles: config.logging.maxFiles,
     auditFile: path.join(config.logging.dirname, `.${filename.replace('%DATE%', 'audit')}.json`),
-    format: logFormat
+    format: fileFormat
   })
 
   if (level) {
     transport.level = level
   }
 
-  // 监听轮转事件
-  transport.on('rotate', (oldFilename, newFilename) => {
-    console.log(`📦 Log rotated: ${oldFilename} -> ${newFilename}`)
-  })
+  // 监听轮转事件（测试环境关闭以避免 Jest 退出后输出）
+  if (!isTestEnv) {
+    transport.on('rotate', (oldFilename, newFilename) => {
+      console.log(`📦 Log rotated: ${oldFilename} -> ${newFilename}`)
+    })
 
-  transport.on('new', (newFilename) => {
-    console.log(`📄 New log file created: ${newFilename}`)
-  })
+    transport.on('new', (newFilename) => {
+      console.log(`📄 New log file created: ${newFilename}`)
+    })
 
-  transport.on('archive', (zipFilename) => {
-    console.log(`🗜️ Log archived: ${zipFilename}`)
-  })
+    transport.on('archive', (zipFilename) => {
+      console.log(`🗜️ Log archived: ${zipFilename}`)
+    })
+  }
 
   return transport
 }
@@ -180,7 +221,7 @@ const errorFileTransport = createRotateTransport('claude-relay-error-%DATE%.log'
 // 🔒 创建专门的安全日志记录器
 const securityLogger = winston.createLogger({
   level: 'warn',
-  format: logFormat,
+  format: fileFormat,
   transports: [createRotateTransport('claude-relay-security-%DATE%.log', 'warn')],
   silent: false
 })
@@ -189,7 +230,7 @@ const securityLogger = winston.createLogger({
 const authDetailLogger = winston.createLogger({
   level: 'info',
   format: winston.format.combine(
-    winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+    winston.format.timestamp({ format: () => formatDateWithTimezone(new Date(), false) }),
     winston.format.printf(({ level, message, timestamp, data }) => {
       // 使用更深的深度和格式化的JSON输出
       const jsonData = data ? JSON.stringify(data, null, 2) : '{}'
@@ -203,7 +244,7 @@ const authDetailLogger = winston.createLogger({
 // 🌟 增强的 Winston logger
 const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || config.logging.level,
-  format: logFormat,
+  format: fileFormat,
   transports: [
     // 📄 文件输出
     dailyRotateFileTransport,
@@ -221,7 +262,7 @@ const logger = winston.createLogger({
   exceptionHandlers: [
     new winston.transports.File({
       filename: path.join(config.logging.dirname, 'exceptions.log'),
-      format: logFormat,
+      format: fileFormat,
       maxsize: 10485760, // 10MB
       maxFiles: 5
     }),
@@ -234,7 +275,7 @@ const logger = winston.createLogger({
   rejectionHandlers: [
     new winston.transports.File({
       filename: path.join(config.logging.dirname, 'rejections.log'),
-      format: logFormat,
+      format: fileFormat,
       maxsize: 10485760, // 10MB
       maxFiles: 5
     }),

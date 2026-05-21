@@ -21,6 +21,9 @@ services:
       - PORT=3000
       - HOST=0.0.0.0
       
+      # 🔧 请求体大小配置
+      - REQUEST_MAX_SIZE_MB=60
+      
       # 🔐 安全配置（必填）
       - JWT_SECRET=${JWT_SECRET}  # 必填：至少32字符的随机字符串
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}  # 必填：32字符的加密密钥
@@ -46,6 +49,10 @@ services:
       # 🌐 代理配置
       - DEFAULT_PROXY_TIMEOUT=${DEFAULT_PROXY_TIMEOUT:-60000}
       - MAX_PROXY_RETRIES=${MAX_PROXY_RETRIES:-3}
+      - PROXY_USE_IPV4=${PROXY_USE_IPV4:-true}
+      - PROXY_KEEP_ALIVE=${PROXY_KEEP_ALIVE:-}
+      - PROXY_MAX_SOCKETS=${PROXY_MAX_SOCKETS:-}
+      - PROXY_MAX_FREE_SOCKETS=${PROXY_MAX_FREE_SOCKETS:-}
       
       # 📈 使用限制
       - DEFAULT_TOKEN_LIMIT=${DEFAULT_TOKEN_LIMIT:-1000000}

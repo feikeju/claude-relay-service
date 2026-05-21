@@ -6,7 +6,7 @@
 
       <!-- 模态框 -->
       <div
-        class="modal-content relative mx-auto flex max-h-[90vh] w-[95%] max-w-2xl flex-col p-4 sm:w-full sm:max-w-3xl sm:p-6 md:p-8"
+        class="modal-content relative mx-auto flex max-h-[90vh] w-[95%] max-w-5xl flex-col p-4 sm:w-full sm:p-6 md:p-8"
       >
         <!-- 标题栏 -->
         <div class="mb-4 flex items-center justify-between sm:mb-6">
@@ -155,46 +155,74 @@
               限制设置
             </h4>
             <div class="space-y-3 rounded-lg bg-gray-50 p-4 dark:bg-gray-700/50">
-              <div v-if="apiKey.dailyCostLimit > 0" class="space-y-2">
-                <div class="flex items-center justify-between text-sm">
-                  <span class="text-gray-600 dark:text-gray-400">每日费用限制</span>
-                  <span class="font-semibold text-gray-900 dark:text-gray-100">
-                    ${{ apiKey.dailyCostLimit.toFixed(2) }}
-                  </span>
-                </div>
-                <div class="h-2 w-full rounded-full bg-gray-200 dark:bg-gray-600">
-                  <div
-                    class="h-2 rounded-full transition-all duration-300"
-                    :class="
-                      dailyCostPercentage >= 100
-                        ? 'bg-red-500'
-                        : dailyCostPercentage >= 80
-                          ? 'bg-yellow-500'
-                          : 'bg-green-500'
-                    "
-                    :style="{ width: Math.min(dailyCostPercentage, 100) + '%' }"
-                  />
-                </div>
+              <div v-if="Number(apiKey.dailyCostLimit) > 0" class="space-y-1.5">
+                <LimitProgressBar
+                  :current="Number(dailyCost) || 0"
+                  label="每日费用限制"
+                  :limit="Number(apiKey.dailyCostLimit) || 0"
+                  :show-shine="true"
+                  type="daily"
+                />
                 <div class="text-right text-xs text-gray-500 dark:text-gray-400">
-                  已使用 {{ dailyCostPercentage.toFixed(1) }}%
+                  已使用 {{ Math.min(dailyCostPercentage, 100).toFixed(1) }}%
+                </div>
+              </div>
+
+              <div v-if="Number(apiKey.weeklyOpusCostLimit) > 0" class="space-y-1.5">
+                <LimitProgressBar
+                  :current="Number(weeklyOpusCost) || 0"
+                  label="Claude 周费用限制"
+                  :limit="Number(apiKey.weeklyOpusCostLimit) || 0"
+                  :show-shine="true"
+                  type="opus"
+                />
+                <div class="text-right text-xs text-gray-500 dark:text-gray-400">
+                  已使用 {{ Math.min(opusUsagePercentage, 100).toFixed(1) }}%
+                </div>
+              </div>
+
+              <div v-if="Number(apiKey.totalCostLimit) > 0" class="space-y-1.5">
+                <LimitProgressBar
+                  :current="Number(totalCost) || 0"
+                  label="总费用限制"
+                  :limit="Number(apiKey.totalCostLimit) || 0"
+                  :show-shine="true"
+                  type="total"
+                />
+                <div class="text-right text-xs text-gray-500 dark:text-gray-400">
+                  已使用 {{ Math.min(totalUsagePercentage, 100).toFixed(1) }}%
                 </div>
               </div>
 
               <div
-                v-if="apiKey.concurrencyLimit > 0"
-                class="flex items-center justify-between text-sm"
+                v-if="Number(apiKey.concurrencyLimit) > 0"
+                class="flex items-center justify-between rounded-lg border border-purple-200/70 bg-white/60 px-3 py-2 text-sm shadow-sm dark:border-purple-500/40 dark:bg-purple-950/20"
               >
-                <span class="text-gray-600 dark:text-gray-400">并发限制</span>
-                <span class="font-semibold text-purple-600">
+                <span class="text-gray-600 dark:text-gray-300">并发限制</span>
+                <span class="font-semibold text-purple-600 dark:text-purple-300">
                   {{ apiKey.currentConcurrency || 0 }} / {{ apiKey.concurrencyLimit }}
                 </span>
               </div>
 
-              <div v-if="apiKey.rateLimitWindow > 0" class="space-y-2">
+              <div
+                v-if="
+                  apiKey.rateLimitWindow > 0 ||
+                  apiKey.rateLimitRequests > 0 ||
+                  apiKey.tokenLimit > 0 ||
+                  apiKey.rateLimitCost > 0
+                "
+                class="space-y-2"
+              >
                 <h5 class="text-sm font-medium text-gray-700 dark:text-gray-300">
                   <i class="fas fa-clock mr-1 text-blue-500" />
                   时间窗口限制
                 </h5>
+                <div
+                  v-if="apiKey.rateLimitWindow <= 0"
+                  class="rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-2 text-xs text-yellow-800 dark:border-yellow-700/50 dark:bg-yellow-900/20 dark:text-yellow-200"
+                >
+                  未设置窗口时长（rateLimitWindow=0），窗口限制不会生效。
+                </div>
                 <WindowCountdown
                   :cost-limit="apiKey.rateLimitCost"
                   :current-cost="apiKey.currentWindowCost"
@@ -211,12 +239,78 @@
                   :window-start-time="apiKey.windowStartTime"
                 />
               </div>
+
+              <!-- 访问控制限制（模型/客户端/服务权限） -->
+              <div v-if="hasAccessRestrictions" class="space-y-2">
+                <h5 class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  <i class="fas fa-lock mr-1 text-gray-500" />
+                  访问控制
+                </h5>
+
+                <div
+                  class="rounded-lg border border-gray-200 bg-white/60 px-3 py-2 text-sm shadow-sm dark:border-gray-600/50 dark:bg-gray-800/40"
+                >
+                  <div class="flex items-center justify-between">
+                    <span class="text-gray-600 dark:text-gray-300">服务权限</span>
+                    <span class="font-semibold text-gray-900 dark:text-gray-100">
+                      {{ permissionsDisplay }}
+                    </span>
+                  </div>
+                </div>
+
+                <div
+                  v-if="enableModelRestriction"
+                  class="rounded-lg border border-gray-200 bg-white/60 px-3 py-2 text-sm shadow-sm dark:border-gray-600/50 dark:bg-gray-800/40"
+                >
+                  <div class="mb-1 flex items-center justify-between">
+                    <span class="text-gray-600 dark:text-gray-300">模型限制（禁用列表）</span>
+                    <span class="font-semibold text-gray-900 dark:text-gray-100">
+                      {{ restrictedModels.length }}
+                    </span>
+                  </div>
+                  <div v-if="restrictedModels.length > 0" class="flex flex-wrap gap-1.5">
+                    <span
+                      v-for="model in restrictedModels"
+                      :key="model"
+                      class="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700 dark:bg-gray-700 dark:text-gray-200"
+                    >
+                      {{ model }}
+                    </span>
+                  </div>
+                  <div v-else class="text-xs text-gray-500 dark:text-gray-400">未配置具体模型</div>
+                </div>
+
+                <div
+                  v-if="enableClientRestriction"
+                  class="rounded-lg border border-gray-200 bg-white/60 px-3 py-2 text-sm shadow-sm dark:border-gray-600/50 dark:bg-gray-800/40"
+                >
+                  <div class="mb-1 flex items-center justify-between">
+                    <span class="text-gray-600 dark:text-gray-300">客户端限制（允许列表）</span>
+                    <span class="font-semibold text-gray-900 dark:text-gray-100">
+                      {{ allowedClients.length }}
+                    </span>
+                  </div>
+                  <div v-if="allowedClients.length > 0" class="flex flex-wrap gap-1.5">
+                    <span
+                      v-for="client in allowedClients"
+                      :key="client"
+                      class="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700 dark:bg-gray-700 dark:text-gray-200"
+                    >
+                      {{ client }}
+                    </span>
+                  </div>
+                  <div v-else class="text-xs text-gray-500 dark:text-gray-400">未配置客户端</div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
         <!-- 底部按钮 -->
         <div class="mt-4 flex justify-end gap-2 sm:mt-6 sm:gap-3">
+          <button class="btn btn-primary px-4 py-2 text-sm" type="button" @click="openTimeline">
+            查看请求时间线
+          </button>
           <button class="btn btn-secondary px-4 py-2 text-sm" type="button" @click="close">
             关闭
           </button>
@@ -228,7 +322,10 @@
 
 <script setup>
 import { computed } from 'vue'
+import LimitProgressBar from './LimitProgressBar.vue'
 import WindowCountdown from './WindowCountdown.vue'
+
+import { formatNumber } from '@/utils/tools'
 
 const props = defineProps({
   show: {
@@ -241,7 +338,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['close'])
+const emit = defineEmits(['close', 'open-timeline'])
 
 // 计算属性
 const totalRequests = computed(() => props.apiKey.usage?.total?.requests || 0)
@@ -250,6 +347,9 @@ const totalTokens = computed(() => props.apiKey.usage?.total?.tokens || 0)
 const dailyTokens = computed(() => props.apiKey.usage?.daily?.tokens || 0)
 const totalCost = computed(() => props.apiKey.usage?.total?.cost || 0)
 const dailyCost = computed(() => props.apiKey.dailyCost || 0)
+const totalCostLimit = computed(() => props.apiKey.totalCostLimit || 0)
+const weeklyOpusCost = computed(() => props.apiKey.weeklyOpusCost || 0)
+const weeklyOpusCostLimit = computed(() => props.apiKey.weeklyOpusCostLimit || 0)
 const inputTokens = computed(() => props.apiKey.usage?.total?.inputTokens || 0)
 const outputTokens = computed(() => props.apiKey.usage?.total?.outputTokens || 0)
 const cacheCreateTokens = computed(() => props.apiKey.usage?.total?.cacheCreateTokens || 0)
@@ -257,12 +357,48 @@ const cacheReadTokens = computed(() => props.apiKey.usage?.total?.cacheReadToken
 const rpm = computed(() => props.apiKey.usage?.averages?.rpm || 0)
 const tpm = computed(() => props.apiKey.usage?.averages?.tpm || 0)
 
+const enableModelRestriction = computed(
+  () =>
+    props.apiKey.enableModelRestriction === true || props.apiKey.enableModelRestriction === 'true'
+)
+const restrictedModels = computed(() =>
+  Array.isArray(props.apiKey.restrictedModels) ? props.apiKey.restrictedModels : []
+)
+const enableClientRestriction = computed(
+  () =>
+    props.apiKey.enableClientRestriction === true || props.apiKey.enableClientRestriction === 'true'
+)
+const allowedClients = computed(() =>
+  Array.isArray(props.apiKey.allowedClients) ? props.apiKey.allowedClients : []
+)
+const permissions = computed(() => props.apiKey.permissions || [])
+
+const permissionsDisplay = computed(() => {
+  if (!Array.isArray(permissions.value) || permissions.value.length === 0) {
+    return '全部'
+  }
+  return permissions.value.join(', ')
+})
+
+const hasAccessRestrictions = computed(() => {
+  return (
+    enableModelRestriction.value ||
+    enableClientRestriction.value ||
+    (Array.isArray(permissions.value) && permissions.value.length > 0)
+  )
+})
+
 const hasLimits = computed(() => {
   return (
-    props.apiKey.dailyCostLimit > 0 ||
-    props.apiKey.concurrencyLimit > 0 ||
-    props.apiKey.rateLimitWindow > 0 ||
-    props.apiKey.tokenLimit > 0
+    Number(props.apiKey.dailyCostLimit) > 0 ||
+    Number(props.apiKey.totalCostLimit) > 0 ||
+    Number(props.apiKey.concurrencyLimit) > 0 ||
+    Number(props.apiKey.weeklyOpusCostLimit) > 0 ||
+    Number(props.apiKey.rateLimitWindow) > 0 ||
+    Number(props.apiKey.rateLimitRequests) > 0 ||
+    Number(props.apiKey.rateLimitCost) > 0 ||
+    Number(props.apiKey.tokenLimit) > 0 ||
+    hasAccessRestrictions.value
   )
 })
 
@@ -271,11 +407,17 @@ const dailyCostPercentage = computed(() => {
   return (dailyCost.value / props.apiKey.dailyCostLimit) * 100
 })
 
+const totalUsagePercentage = computed(() => {
+  if (!totalCostLimit.value || totalCostLimit.value === 0) return 0
+  return (totalCost.value / totalCostLimit.value) * 100
+})
+
+const opusUsagePercentage = computed(() => {
+  if (!weeklyOpusCostLimit.value || weeklyOpusCostLimit.value === 0) return 0
+  return (weeklyOpusCost.value / weeklyOpusCostLimit.value) * 100
+})
+
 // 方法
-const formatNumber = (num) => {
-  if (!num && num !== 0) return '0'
-  return num.toLocaleString('zh-CN')
-}
 
 // 格式化Token数量（使用K/M单位）
 const formatTokenCount = (count) => {
@@ -290,8 +432,8 @@ const formatTokenCount = (count) => {
 const close = () => {
   emit('close')
 }
-</script>
 
-<style scoped>
-/* 使用项目的通用样式，不需要额外定义 */
-</style>
+const openTimeline = () => {
+  emit('open-timeline', props.apiKey?.id)
+}
+</script>

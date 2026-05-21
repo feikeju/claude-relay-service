@@ -5,6 +5,11 @@
 
 const redis = require('../models/redis')
 const logger = require('../utils/logger')
+const {
+  getCachedConfig,
+  setCachedConfig,
+  deleteCachedConfig
+} = require('../utils/performanceOptimizer')
 
 class ClaudeCodeHeadersService {
   constructor() {
@@ -38,9 +43,12 @@ class ClaudeCodeHeadersService {
       'x-app',
       'user-agent',
       'accept-language',
-      'sec-fetch-mode',
-      'accept-encoding'
+      'sec-fetch-mode'
+      // 注意：不捕获 accept-encoding，避免存储客户端的 zstd 等不支持的编码
     ]
+
+    // Headers 缓存 TTL（60秒）
+    this.headersCacheTtl = 60000
   }
 
   /**
@@ -147,6 +155,9 @@ class ClaudeCodeHeadersService {
 
       await redis.getClient().setex(key, 86400 * 7, JSON.stringify(data)) // 7天过期
 
+      // 更新内存缓存，避免延迟
+      setCachedConfig(key, extractedHeaders, this.headersCacheTtl)
+
       logger.info(`✅ Stored Claude Code headers for account ${accountId}, version: ${version}`)
     } catch (error) {
       logger.error(`❌ Failed to store Claude Code headers for account ${accountId}:`, error)
@@ -154,18 +165,27 @@ class ClaudeCodeHeadersService {
   }
 
   /**
-   * 获取账号的 Claude Code headers
+   * 获取账号的 Claude Code headers（带内存缓存）
    */
   async getAccountHeaders(accountId) {
+    const cacheKey = `claude_code_headers:${accountId}`
+
+    // 检查内存缓存
+    const cached = getCachedConfig(cacheKey)
+    if (cached) {
+      return cached
+    }
+
     try {
-      const key = `claude_code_headers:${accountId}`
-      const data = await redis.getClient().get(key)
+      const data = await redis.getClient().get(cacheKey)
 
       if (data) {
         const parsed = JSON.parse(data)
         logger.debug(
           `📋 Retrieved Claude Code headers for account ${accountId}, version: ${parsed.version}`
         )
+        // 缓存到内存
+        setCachedConfig(cacheKey, parsed.headers, this.headersCacheTtl)
         return parsed.headers
       }
 
@@ -183,8 +203,10 @@ class ClaudeCodeHeadersService {
    */
   async clearAccountHeaders(accountId) {
     try {
-      const key = `claude_code_headers:${accountId}`
-      await redis.getClient().del(key)
+      const cacheKey = `claude_code_headers:${accountId}`
+      await redis.getClient().del(cacheKey)
+      // 删除内存缓存
+      deleteCachedConfig(cacheKey)
       logger.info(`🗑️ Cleared Claude Code headers for account ${accountId}`)
     } catch (error) {
       logger.error(`❌ Failed to clear Claude Code headers for account ${accountId}:`, error)
@@ -192,12 +214,12 @@ class ClaudeCodeHeadersService {
   }
 
   /**
-   * 获取所有账号的 headers 信息
+   * 获取所有账号的 headers 信息（使用 scanKeys 替代 keys）
    */
   async getAllAccountHeaders() {
     try {
       const pattern = 'claude_code_headers:*'
-      const keys = await redis.getClient().keys(pattern)
+      const keys = await redis.scanKeys(pattern)
 
       const results = {}
       for (const key of keys) {

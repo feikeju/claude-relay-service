@@ -2,28 +2,38 @@ const express = require('express')
 const router = express.Router()
 const logger = require('../utils/logger')
 const { authenticateApiKey } = require('../middleware/auth')
-const geminiAccountService = require('../services/geminiAccountService')
-const unifiedGeminiScheduler = require('../services/unifiedGeminiScheduler')
-const { getAvailableModels } = require('../services/geminiRelayService')
+const geminiAccountService = require('../services/account/geminiAccountService')
+const unifiedGeminiScheduler = require('../services/scheduler/unifiedGeminiScheduler')
+const { getAvailableModels } = require('../services/relay/geminiRelayService')
 const crypto = require('crypto')
+const apiKeyService = require('../services/apiKeyService')
+const { createRequestDetailMeta } = require('../utils/requestDetailHelper')
 
 // 生成会话哈希
 function generateSessionHash(req) {
-  const sessionData = [
-    req.headers['user-agent'],
-    req.ip,
-    req.headers['authorization']?.substring(0, 20)
-  ]
+  const authSource =
+    req.headers['authorization'] || req.headers['x-api-key'] || req.headers['x-goog-api-key']
+
+  const sessionData = [req.headers['user-agent'], req.ip, authSource?.substring(0, 20)]
     .filter(Boolean)
     .join(':')
 
   return crypto.createHash('sha256').update(sessionData).digest('hex')
 }
 
+function ensureAntigravityProjectId(account) {
+  if (account.projectId) {
+    return account.projectId
+  }
+  if (account.tempProjectId) {
+    return account.tempProjectId
+  }
+  return `ag-${crypto.randomBytes(8).toString('hex')}`
+}
+
 // 检查 API Key 权限
 function checkPermissions(apiKeyData, requiredPermission = 'gemini') {
-  const permissions = apiKeyData.permissions || 'all'
-  return permissions === 'all' || permissions === requiredPermission
+  return apiKeyService.hasPermission(apiKeyData?.permissions, requiredPermission)
 }
 
 // 转换 OpenAI 消息格式到 Gemini 格式
@@ -336,25 +346,48 @@ router.post('/v1/chat/completions', authenticateApiKey, async (req, res) => {
     const client = await geminiAccountService.getOauthClient(
       account.accessToken,
       account.refreshToken,
-      proxyConfig
+      proxyConfig,
+      account.oauthProvider
     )
     if (actualStream) {
       // 流式响应
+      const oauthProvider = account.oauthProvider || 'gemini-cli'
+      let { projectId } = account
+
+      if (oauthProvider === 'antigravity') {
+        projectId = ensureAntigravityProjectId(account)
+        if (!account.projectId && account.tempProjectId !== projectId) {
+          await geminiAccountService.updateTempProjectId(account.id, projectId)
+          account.tempProjectId = projectId
+        }
+      }
+
       logger.info('StreamGenerateContent request', {
         model,
-        projectId: account.projectId,
+        projectId,
         apiKeyId: apiKeyData.id
       })
 
-      const streamResponse = await geminiAccountService.generateContentStream(
-        client,
-        { model, request: geminiRequestBody },
-        null, // user_prompt_id
-        account.projectId, // 使用有权限的项目ID
-        apiKeyData.id, // 使用 API Key ID 作为 session ID
-        abortController.signal, // 传递中止信号
-        proxyConfig // 传递代理配置
-      )
+      const streamResponse =
+        oauthProvider === 'antigravity'
+          ? await geminiAccountService.generateContentStreamAntigravity(
+              client,
+              { model, request: geminiRequestBody },
+              null, // user_prompt_id
+              projectId,
+              apiKeyData.id, // 使用 API Key ID 作为 session ID
+              abortController.signal, // 传递中止信号
+              proxyConfig // 传递代理配置
+            )
+          : await geminiAccountService.generateContentStream(
+              client,
+              { model, request: geminiRequestBody },
+              null, // user_prompt_id
+              projectId, // 使用有权限的项目ID
+              apiKeyData.id, // 使用 API Key ID 作为 session ID
+              abortController.signal, // 传递中止信号
+              proxyConfig // 传递代理配置
+            )
 
       // 设置流式响应头
       res.setHeader('Content-Type', 'text/event-stream')
@@ -387,7 +420,7 @@ router.post('/v1/chat/completions', authenticateApiKey, async (req, res) => {
         candidatesTokenCount: 0,
         totalTokenCount: 0
       }
-      const usageReported = false
+      let usageReported = false // 修复：改为 let 以便后续修改
 
       streamResponse.on('data', (chunk) => {
         try {
@@ -500,7 +533,6 @@ router.post('/v1/chat/completions', authenticateApiKey, async (req, res) => {
         // 记录使用统计
         if (!usageReported && totalUsage.totalTokenCount > 0) {
           try {
-            const apiKeyService = require('../services/apiKeyService')
             await apiKeyService.recordUsage(
               apiKeyData.id,
               totalUsage.promptTokenCount || 0,
@@ -508,11 +540,21 @@ router.post('/v1/chat/completions', authenticateApiKey, async (req, res) => {
               0, // cacheCreateTokens
               0, // cacheReadTokens
               model,
-              account.id
+              account.id,
+              'gemini',
+              null,
+              createRequestDetailMeta(req, {
+                requestBody: req.body,
+                stream: true,
+                statusCode: res.statusCode
+              })
             )
             logger.info(
               `📊 Recorded Gemini stream usage - Input: ${totalUsage.promptTokenCount}, Output: ${totalUsage.candidatesTokenCount}, Total: ${totalUsage.totalTokenCount}`
             )
+
+            // 修复：标记 usage 已上报，避免重复上报
+            usageReported = true
           } catch (error) {
             logger.error('Failed to record Gemini usage:', error)
           }
@@ -535,27 +577,63 @@ router.post('/v1/chat/completions', authenticateApiKey, async (req, res) => {
           })
         } else {
           // 如果已经开始发送流数据，发送错误事件
-          res.write(`data: {"error": {"message": "${error.message || 'Stream error'}"}}\n\n`)
-          res.write('data: [DONE]\n\n')
+          // 修复：使用 JSON.stringify 避免字符串插值导致的格式错误
+          if (!res.destroyed) {
+            try {
+              res.write(
+                `data: ${JSON.stringify({
+                  error: {
+                    message: error.message || 'Stream error',
+                    type: 'stream_error',
+                    code: error.code
+                  }
+                })}\n\n`
+              )
+              res.write('data: [DONE]\n\n')
+            } catch (writeError) {
+              logger.error('Error sending error event:', writeError)
+            }
+          }
           res.end()
         }
       })
     } else {
       // 非流式响应
+      const oauthProvider = account.oauthProvider || 'gemini-cli'
+      let { projectId } = account
+
+      if (oauthProvider === 'antigravity') {
+        projectId = ensureAntigravityProjectId(account)
+        if (!account.projectId && account.tempProjectId !== projectId) {
+          await geminiAccountService.updateTempProjectId(account.id, projectId)
+          account.tempProjectId = projectId
+        }
+      }
+
       logger.info('GenerateContent request', {
         model,
-        projectId: account.projectId,
+        projectId,
         apiKeyId: apiKeyData.id
       })
 
-      const response = await geminiAccountService.generateContent(
-        client,
-        { model, request: geminiRequestBody },
-        null, // user_prompt_id
-        account.projectId, // 使用有权限的项目ID
-        apiKeyData.id, // 使用 API Key ID 作为 session ID
-        proxyConfig // 传递代理配置
-      )
+      const response =
+        oauthProvider === 'antigravity'
+          ? await geminiAccountService.generateContentAntigravity(
+              client,
+              { model, request: geminiRequestBody },
+              null, // user_prompt_id
+              projectId,
+              apiKeyData.id, // 使用 API Key ID 作为 session ID
+              proxyConfig // 传递代理配置
+            )
+          : await geminiAccountService.generateContent(
+              client,
+              { model, request: geminiRequestBody },
+              null, // user_prompt_id
+              projectId, // 使用有权限的项目ID
+              apiKeyData.id, // 使用 API Key ID 作为 session ID
+              proxyConfig // 传递代理配置
+            )
 
       // 转换为 OpenAI 格式并返回
       const openaiResponse = convertGeminiResponseToOpenAI(response, model, false)
@@ -563,7 +641,6 @@ router.post('/v1/chat/completions', authenticateApiKey, async (req, res) => {
       // 记录使用统计
       if (openaiResponse.usage) {
         try {
-          const apiKeyService = require('../services/apiKeyService')
           await apiKeyService.recordUsage(
             apiKeyData.id,
             openaiResponse.usage.prompt_tokens || 0,
@@ -571,7 +648,14 @@ router.post('/v1/chat/completions', authenticateApiKey, async (req, res) => {
             0, // cacheCreateTokens
             0, // cacheReadTokens
             model,
-            account.id
+            account.id,
+            'gemini',
+            null,
+            createRequestDetailMeta(req, {
+              requestBody: req.body,
+              stream: false,
+              statusCode: res.statusCode || 200
+            })
           )
           logger.info(
             `📊 Recorded Gemini usage - Input: ${openaiResponse.usage.prompt_tokens}, Output: ${openaiResponse.usage.completion_tokens}, Total: ${openaiResponse.usage.total_tokens}`
@@ -587,7 +671,15 @@ router.post('/v1/chat/completions', authenticateApiKey, async (req, res) => {
     const duration = Date.now() - startTime
     logger.info(`OpenAI-Gemini request completed in ${duration}ms`)
   } catch (error) {
-    logger.error('OpenAI-Gemini request error:', error)
+    const statusForLog = error?.status || error?.response?.status
+    logger.error('OpenAI-Gemini request error', {
+      message: error?.message,
+      status: statusForLog,
+      code: error?.code,
+      requestUrl: error?.config?.url,
+      requestMethod: error?.config?.method,
+      upstreamTraceId: error?.response?.headers?.['x-cloudaicompanion-trace-id']
+    })
 
     // 处理速率限制
     if (error.status === 429) {
@@ -596,17 +688,24 @@ router.post('/v1/chat/completions', authenticateApiKey, async (req, res) => {
       }
     }
 
-    // 返回 OpenAI 格式的错误响应
-    const status = error.status || 500
-    const errorResponse = {
-      error: error.error || {
-        message: error.message || 'Internal server error',
-        type: 'server_error',
-        code: 'internal_error'
+    // 检查响应是否已发送（流式响应场景），避免 ERR_HTTP_HEADERS_SENT
+    if (!res.headersSent) {
+      // 客户端断开使用 499 状态码 (Client Closed Request)
+      if (error.message === 'Client disconnected') {
+        res.status(499).end()
+      } else {
+        // 返回 OpenAI 格式的错误响应
+        const status = error.status || 500
+        const errorResponse = {
+          error: error.error || {
+            message: error.message || 'Internal server error',
+            type: 'server_error',
+            code: 'internal_error'
+          }
+        }
+        res.status(status).json(errorResponse)
       }
     }
-
-    res.status(status).json(errorResponse)
   } finally {
     // 清理资源
     if (abortController) {
@@ -616,8 +715,8 @@ router.post('/v1/chat/completions', authenticateApiKey, async (req, res) => {
   return undefined
 })
 
-// OpenAI 兼容的模型列表端点
-router.get('/v1/models', authenticateApiKey, async (req, res) => {
+// 获取可用模型列表的共享处理器
+async function handleGetModels(req, res) {
   try {
     const apiKeyData = req.apiKey
 
@@ -648,10 +747,34 @@ router.get('/v1/models', authenticateApiKey, async (req, res) => {
     let models = []
 
     if (account) {
-      // 获取实际的模型列表
-      models = await getAvailableModels(account.accessToken, account.proxy)
+      // 获取实际的模型列表（失败时回退到默认列表，避免影响 /v1/models 可用性）
+      try {
+        const oauthProvider = account.oauthProvider || 'gemini-cli'
+        models =
+          oauthProvider === 'antigravity'
+            ? await geminiAccountService.fetchAvailableModelsAntigravity(
+                account.accessToken,
+                account.proxy,
+                account.refreshToken
+              )
+            : await getAvailableModels(account.accessToken, account.proxy)
+      } catch (error) {
+        logger.warn('Failed to get Gemini models list from upstream, fallback to default:', error)
+        models = []
+      }
     } else {
       // 返回默认模型列表
+      models = [
+        {
+          id: 'gemini-2.0-flash-exp',
+          object: 'model',
+          created: Math.floor(Date.now() / 1000),
+          owned_by: 'google'
+        }
+      ]
+    }
+
+    if (!models || models.length === 0) {
       models = [
         {
           id: 'gemini-2.0-flash-exp',
@@ -681,8 +804,13 @@ router.get('/v1/models', authenticateApiKey, async (req, res) => {
       }
     })
   }
-  return undefined
-})
+}
+
+// OpenAI 兼容的模型列表端点 (带 v1 版)
+router.get('/v1/models', authenticateApiKey, handleGetModels)
+
+// OpenAI 兼容的模型列表端点 (根路径版，方便第三方加载)
+router.get('/models', authenticateApiKey, handleGetModels)
 
 // OpenAI 兼容的模型详情端点
 router.get('/v1/models/:model', authenticateApiKey, async (req, res) => {

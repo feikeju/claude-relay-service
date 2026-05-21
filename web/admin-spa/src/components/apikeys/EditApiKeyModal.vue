@@ -32,17 +32,64 @@
               class="mb-1.5 block text-xs font-semibold text-gray-700 dark:text-gray-300 sm:mb-3 sm:text-sm"
               >名称</label
             >
-            <input
-              v-model="form.name"
-              class="form-input w-full text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400"
-              maxlength="100"
-              placeholder="请输入API Key名称"
-              required
-              type="text"
-            />
+            <div>
+              <input
+                v-model="form.name"
+                class="form-input flex-1 border-gray-300 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400"
+                maxlength="100"
+                placeholder="请输入API Key名称"
+                required
+                type="text"
+              />
+            </div>
             <p class="mt-1 text-xs text-gray-500 dark:text-gray-400 sm:mt-2">
               用于识别此 API Key 的用途
             </p>
+          </div>
+
+          <!-- 服务倍率设置 -->
+          <div
+            class="rounded-lg border border-purple-200 bg-gradient-to-r from-purple-50 to-indigo-50 p-3 dark:border-purple-700 dark:from-purple-900/20 dark:to-indigo-900/20 sm:p-4"
+          >
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <input
+                  id="editEnableServiceRates"
+                  v-model="enableServiceRates"
+                  class="h-4 w-4 rounded border-gray-300 bg-gray-100 text-purple-600 focus:ring-purple-500"
+                  type="checkbox"
+                />
+                <label
+                  class="cursor-pointer text-sm font-semibold text-gray-700 dark:text-gray-300"
+                  for="editEnableServiceRates"
+                >
+                  自定义服务倍率
+                </label>
+              </div>
+              <span class="text-xs text-gray-500 dark:text-gray-400">
+                与全局倍率相乘，用于 VIP 折扣等（如全局1.5 × Key倍率0.8 = 1.2）
+              </span>
+            </div>
+            <div v-if="enableServiceRates" class="mt-3 space-y-2">
+              <div
+                v-for="service in availableServices"
+                :key="service.key"
+                class="flex items-center gap-2"
+              >
+                <span class="w-20 text-xs text-gray-600 dark:text-gray-400">{{
+                  service.label
+                }}</span>
+                <input
+                  v-model.number="form.serviceRates[service.key]"
+                  class="form-input w-24 border-gray-300 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
+                  min="0"
+                  placeholder="1.0"
+                  step="0.1"
+                  type="number"
+                />
+                <span class="text-xs text-gray-400">默认 1.0</span>
+              </div>
+            </div>
           </div>
 
           <!-- 所有者选择 -->
@@ -53,7 +100,7 @@
             >
             <select
               v-model="form.ownerId"
-              class="form-input w-full dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
+              class="form-input w-full border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
             >
               <option v-for="user in availableUsers" :key="user.id" :value="user.id">
                 {{ user.displayName }} ({{ user.username }})
@@ -122,7 +169,7 @@
                 <div class="flex gap-2">
                   <input
                     v-model="newTag"
-                    class="form-input flex-1 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400"
+                    class="form-input flex-1 border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400"
                     placeholder="输入新标签名称"
                     type="text"
                     @keypress.enter.prevent="addTag"
@@ -166,7 +213,7 @@
                   >
                   <input
                     v-model="form.rateLimitWindow"
-                    class="form-input w-full text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400"
+                    class="form-input w-full border-gray-300 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400"
                     min="1"
                     placeholder="无限制"
                     type="number"
@@ -180,7 +227,7 @@
                   >
                   <input
                     v-model="form.rateLimitRequests"
-                    class="form-input w-full text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400"
+                    class="form-input w-full border-gray-300 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400"
                     min="1"
                     placeholder="无限制"
                     type="number"
@@ -194,7 +241,7 @@
                   >
                   <input
                     v-model="form.rateLimitCost"
-                    class="form-input w-full text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400"
+                    class="form-input w-full border-gray-300 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400"
                     min="0"
                     placeholder="无限制"
                     step="0.01"
@@ -259,7 +306,7 @@
               </div>
               <input
                 v-model="form.dailyCostLimit"
-                class="form-input w-full dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400"
+                class="form-input w-full border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400"
                 min="0"
                 placeholder="0 表示无限制"
                 step="0.01"
@@ -273,7 +320,56 @@
 
           <div>
             <label class="mb-3 block text-sm font-semibold text-gray-700 dark:text-gray-300"
-              >Opus 模型周费用限制 (美元)</label
+              >总费用限制 (美元)</label
+            >
+            <div class="space-y-3">
+              <div class="flex gap-2">
+                <button
+                  class="rounded-lg bg-gray-100 px-3 py-1 text-sm font-medium hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+                  type="button"
+                  @click="form.totalCostLimit = '100'"
+                >
+                  $100
+                </button>
+                <button
+                  class="rounded-lg bg-gray-100 px-3 py-1 text-sm font-medium hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+                  type="button"
+                  @click="form.totalCostLimit = '500'"
+                >
+                  $500
+                </button>
+                <button
+                  class="rounded-lg bg-gray-100 px-3 py-1 text-sm font-medium hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+                  type="button"
+                  @click="form.totalCostLimit = '1000'"
+                >
+                  $1000
+                </button>
+                <button
+                  class="rounded-lg bg-gray-100 px-3 py-1 text-sm font-medium hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+                  type="button"
+                  @click="form.totalCostLimit = ''"
+                >
+                  自定义
+                </button>
+              </div>
+              <input
+                v-model="form.totalCostLimit"
+                class="form-input w-full border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400"
+                min="0"
+                placeholder="0 表示无限制"
+                step="0.01"
+                type="number"
+              />
+              <p class="text-xs text-gray-500 dark:text-gray-400">
+                设置此 API Key 的累计总费用限制，达到限制后将拒绝所有后续请求，0 或留空表示无限制
+              </p>
+            </div>
+          </div>
+
+          <div>
+            <label class="mb-3 block text-sm font-semibold text-gray-700 dark:text-gray-300"
+              >Claude 模型周费用限制 (美元)</label
             >
             <div class="space-y-3">
               <div class="flex gap-2">
@@ -308,15 +404,50 @@
               </div>
               <input
                 v-model="form.weeklyOpusCostLimit"
-                class="form-input w-full dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400"
+                class="form-input w-full border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400"
                 min="0"
                 placeholder="0 表示无限制"
                 step="0.01"
                 type="number"
               />
               <p class="text-xs text-gray-500 dark:text-gray-400">
-                设置 Opus 模型的周费用限制（周一到周日），仅限 Claude 官方账户，0 或留空表示无限制
+                设置 Claude 模型的周费用限制，仅对 Claude 模型请求生效，0 或留空表示无限制
               </p>
+              <div
+                v-if="form.weeklyOpusCostLimit && Number(form.weeklyOpusCostLimit) > 0"
+                class="mt-3 flex gap-3"
+              >
+                <div class="flex-1">
+                  <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
+                    >重置日</label
+                  >
+                  <select
+                    v-model="form.weeklyResetDay"
+                    class="form-input w-full border-gray-300 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
+                  >
+                    <option :value="1">周一</option>
+                    <option :value="2">周二</option>
+                    <option :value="3">周三</option>
+                    <option :value="4">周四</option>
+                    <option :value="5">周五</option>
+                    <option :value="6">周六</option>
+                    <option :value="7">周日</option>
+                  </select>
+                </div>
+                <div class="flex-1">
+                  <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
+                    >重置时间 (UTC+8)</label
+                  >
+                  <select
+                    v-model="form.weeklyResetHour"
+                    class="form-input w-full border-gray-300 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
+                  >
+                    <option v-for="h in 24" :key="h - 1" :value="h - 1">
+                      {{ String(h - 1).padStart(2, '0') }}:00
+                    </option>
+                  </select>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -326,7 +457,7 @@
             >
             <input
               v-model="form.concurrencyLimit"
-              class="form-input w-full dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400"
+              class="form-input w-full border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400"
               min="0"
               placeholder="0 表示无限制"
               type="number"
@@ -361,47 +492,257 @@
             <label class="mb-3 block text-sm font-semibold text-gray-700 dark:text-gray-300"
               >服务权限</label
             >
-            <div class="flex gap-4">
+            <div class="flex flex-wrap gap-4">
               <label class="flex cursor-pointer items-center">
                 <input
                   v-model="form.permissions"
-                  class="mr-2 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700"
-                  type="radio"
-                  value="all"
-                />
-                <span class="text-sm text-gray-700 dark:text-gray-300">全部服务</span>
-              </label>
-              <label class="flex cursor-pointer items-center">
-                <input
-                  v-model="form.permissions"
-                  class="mr-2 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700"
-                  type="radio"
+                  class="mr-2 rounded text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700"
+                  type="checkbox"
                   value="claude"
+                  @change="updatePermissions"
                 />
-                <span class="text-sm text-gray-700 dark:text-gray-300">仅 Claude</span>
+                <span class="text-sm text-gray-700 dark:text-gray-300">Claude</span>
               </label>
               <label class="flex cursor-pointer items-center">
                 <input
                   v-model="form.permissions"
-                  class="mr-2 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700"
-                  type="radio"
+                  class="mr-2 rounded text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700"
+                  type="checkbox"
                   value="gemini"
+                  @change="updatePermissions"
                 />
-                <span class="text-sm text-gray-700 dark:text-gray-300">仅 Gemini</span>
+                <span class="text-sm text-gray-700 dark:text-gray-300">Gemini</span>
               </label>
               <label class="flex cursor-pointer items-center">
                 <input
                   v-model="form.permissions"
-                  class="mr-2 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700"
-                  type="radio"
+                  class="mr-2 rounded text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700"
+                  type="checkbox"
                   value="openai"
+                  @change="updatePermissions"
                 />
-                <span class="text-sm text-gray-700 dark:text-gray-300">仅 OpenAI</span>
+                <span class="text-sm text-gray-700 dark:text-gray-300">OpenAI</span>
+              </label>
+              <label class="flex cursor-pointer items-center">
+                <input
+                  v-model="form.permissions"
+                  class="mr-2 rounded text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700"
+                  type="checkbox"
+                  value="droid"
+                  @change="updatePermissions"
+                />
+                <span class="text-sm text-gray-700 dark:text-gray-300">Droid</span>
               </label>
             </div>
             <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
-              控制此 API Key 可以访问哪些服务
+              不选择任何服务表示允许访问全部服务
             </p>
+          </div>
+
+          <div
+            class="rounded-lg border border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-700 dark:bg-emerald-900/20"
+          >
+            <div class="mb-3 flex items-center gap-2">
+              <div
+                class="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded bg-emerald-500"
+              >
+                <i class="fas fa-sliders-h text-xs text-white" />
+              </div>
+              <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                OpenAI Responses 请求处理
+              </h4>
+            </div>
+
+            <div class="space-y-3">
+              <label class="flex cursor-pointer items-start gap-3">
+                <input
+                  v-model="form.enableOpenAIResponsesCodexAdaptation"
+                  class="mt-0.5 h-4 w-4 rounded border-gray-300 bg-gray-100 text-emerald-600 focus:ring-emerald-500"
+                  type="checkbox"
+                />
+                <span class="flex-1">
+                  <span class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <span class="inline-flex items-center gap-1">
+                      <span>非 Codex 请求兼容为 Codex 风格</span>
+                      <el-tooltip placement="top">
+                        <template #content>
+                          <div class="w-[250px] space-y-2 text-xs leading-relaxed">
+                            <div>只对 `/openai/responses` 和 `/openai/v1/responses` 生效。</div>
+                            <div>
+                              关闭后不再做 Codex 风格字段改写，会保留原始 `text`、`service_tier`
+                              等字段。
+                            </div>
+                            <div>
+                              普通 OpenAI 账号仍会保留必要的 `gpt-5-*` 模型名兼容，
+                              方便调度和上游请求继续命中 `gpt-5`。
+                            </div>
+                          </div>
+                        </template>
+                        <span class="inline-flex" @click.stop.prevent>
+                          <i
+                            class="fas fa-question-circle cursor-help text-xs text-gray-400 hover:text-gray-600"
+                          />
+                        </span>
+                      </el-tooltip>
+                    </span>
+                  </span>
+                </span>
+              </label>
+
+              <label class="flex cursor-pointer items-start gap-3">
+                <input
+                  v-model="form.enableOpenAIResponsesPayloadRules"
+                  class="mt-0.5 h-4 w-4 rounded border-gray-300 bg-gray-100 text-emerald-600 focus:ring-emerald-500"
+                  type="checkbox"
+                />
+                <span class="flex-1">
+                  <span class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <span class="inline-flex items-center gap-1">
+                      <span>启用 Payload 规则</span>
+                      <el-tooltip placement="top">
+                        <template #content>
+                          <div class="w-[240px] space-y-2 text-xs leading-relaxed">
+                            <div>开启后会按顺序写入字段。</div>
+                            <div>只填字段不填值时，会把该字段写成空字符串。</div>
+                          </div>
+                        </template>
+                        <span class="inline-flex" @click.stop.prevent>
+                          <i
+                            class="fas fa-question-circle cursor-help text-xs text-gray-400 hover:text-gray-600"
+                          />
+                        </span>
+                      </el-tooltip>
+                    </span>
+                  </span>
+                </span>
+              </label>
+
+              <div
+                v-if="form.enableOpenAIResponsesPayloadRules"
+                class="rounded-lg border border-emerald-100 bg-white/70 p-3 dark:border-emerald-800 dark:bg-gray-800/40"
+              >
+                <div class="mb-3 flex items-center justify-between">
+                  <div
+                    class="flex items-center gap-1 text-sm font-medium text-gray-700 dark:text-gray-300"
+                  >
+                    <span>Payload 规则</span>
+                    <el-tooltip placement="top">
+                      <template #content>
+                        <div class="w-[240px] space-y-2 text-xs leading-relaxed">
+                          <div>规则会按列表顺序依次执行，后面的规则可以覆盖前面的结果。</div>
+                          <div>两个开关都开启时，先做 Codex 风格兼容，再应用这里的规则。</div>
+                        </div>
+                      </template>
+                      <span class="inline-flex" @click.stop.prevent>
+                        <i
+                          class="fas fa-question-circle cursor-help text-xs text-gray-400 hover:text-gray-600"
+                        />
+                      </span>
+                    </el-tooltip>
+                  </div>
+                  <button
+                    class="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-600"
+                    type="button"
+                    @click="addPayloadRule"
+                  >
+                    <i class="fas fa-plus mr-1" />
+                    新增规则
+                  </button>
+                </div>
+
+                <div class="space-y-3">
+                  <div
+                    v-for="(rule, index) in form.openaiResponsesPayloadRules"
+                    :key="`payload-rule-${index}`"
+                    class="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/70"
+                  >
+                    <div class="mb-3 flex items-center justify-between">
+                      <span class="text-xs font-medium uppercase tracking-wide text-gray-500">
+                        规则 {{ index + 1 }}
+                      </span>
+                      <button
+                        class="text-sm text-red-500 transition-colors hover:text-red-600"
+                        type="button"
+                        @click="removePayloadRule(index)"
+                      >
+                        <i class="fas fa-trash-alt" />
+                      </button>
+                    </div>
+
+                    <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                      <div>
+                        <label
+                          class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
+                        >
+                          字段路径
+                        </label>
+                        <input
+                          v-model="rule.path"
+                          class="form-input w-full border-gray-300 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400"
+                          placeholder="例如 text.format.type"
+                          type="text"
+                        />
+                      </div>
+
+                      <div>
+                        <label
+                          class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
+                        >
+                          值类型
+                        </label>
+                        <select
+                          v-model="rule.valueType"
+                          class="form-input w-full border-gray-300 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
+                        >
+                          <option
+                            v-for="option in payloadRuleValueTypeOptions"
+                            :key="option.value"
+                            :value="option.value"
+                          >
+                            {{ option.label }}
+                          </option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div class="mt-3">
+                      <label
+                        class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
+                      >
+                        值
+                      </label>
+                      <textarea
+                        v-if="rule.valueType === 'json'"
+                        v-model="rule.value"
+                        class="form-input w-full resize-y border-gray-300 font-mono text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400"
+                        placeholder='例如 {"type":"json_schema"}'
+                        rows="4"
+                      />
+                      <input
+                        v-else
+                        v-model="rule.value"
+                        class="form-input w-full border-gray-300 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400"
+                        :placeholder="
+                          rule.valueType === 'boolean'
+                            ? 'true 或 false'
+                            : rule.valueType === 'number'
+                              ? '例如 123'
+                              : '留空则写入空字符串'
+                        "
+                        type="text"
+                      />
+                    </div>
+                  </div>
+
+                  <div
+                    v-if="form.openaiResponsesPayloadRules.length === 0"
+                    class="rounded-lg border border-dashed border-emerald-200 px-4 py-6 text-center text-sm text-gray-500 dark:border-emerald-800 dark:text-gray-400"
+                  >
+                    还没有规则，点右上角新增一条。
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div>
@@ -435,7 +776,7 @@
                   v-model="form.claudeAccountId"
                   :accounts="localAccounts.claude"
                   default-option-text="使用共享账号池"
-                  :disabled="form.permissions === 'gemini' || form.permissions === 'openai'"
+                  :disabled="form.permissions.length > 0 && !form.permissions.includes('claude')"
                   :groups="localAccounts.claudeGroups"
                   placeholder="请选择Claude账号"
                   platform="claude"
@@ -449,7 +790,7 @@
                   v-model="form.geminiAccountId"
                   :accounts="localAccounts.gemini"
                   default-option-text="使用共享账号池"
-                  :disabled="form.permissions === 'claude' || form.permissions === 'openai'"
+                  :disabled="form.permissions.length > 0 && !form.permissions.includes('gemini')"
                   :groups="localAccounts.geminiGroups"
                   placeholder="请选择Gemini账号"
                   platform="gemini"
@@ -463,7 +804,7 @@
                   v-model="form.openaiAccountId"
                   :accounts="localAccounts.openai"
                   default-option-text="使用共享账号池"
-                  :disabled="form.permissions === 'claude' || form.permissions === 'gemini'"
+                  :disabled="form.permissions.length > 0 && !form.permissions.includes('openai')"
                   :groups="localAccounts.openaiGroups"
                   placeholder="请选择OpenAI账号"
                   platform="openai"
@@ -477,10 +818,24 @@
                   v-model="form.bedrockAccountId"
                   :accounts="localAccounts.bedrock"
                   default-option-text="使用共享账号池"
-                  :disabled="form.permissions === 'gemini' || form.permissions === 'openai'"
+                  :disabled="form.permissions.length > 0 && !form.permissions.includes('claude')"
                   :groups="[]"
                   placeholder="请选择Bedrock账号"
                   platform="bedrock"
+                />
+              </div>
+              <div>
+                <label class="mb-1 block text-sm font-medium text-gray-600 dark:text-gray-400"
+                  >Droid 专属账号</label
+                >
+                <AccountSelector
+                  v-model="form.droidAccountId"
+                  :accounts="localAccounts.droid"
+                  default-option-text="使用共享账号池"
+                  :disabled="form.permissions.length > 0 && !form.permissions.includes('droid')"
+                  :groups="localAccounts.droidGroups"
+                  placeholder="请选择Droid账号"
+                  platform="droid"
                 />
               </div>
             </div>
@@ -558,7 +913,7 @@
                   <div class="flex gap-2">
                     <input
                       v-model="form.modelInput"
-                      class="form-input flex-1 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400"
+                      class="form-input flex-1 border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400"
                       placeholder="输入模型名称，按回车添加"
                       type="text"
                       @keydown.enter.prevent="addRestrictedModel"
@@ -648,16 +1003,29 @@
         </form>
       </div>
     </div>
+
+    <!-- ConfirmModal -->
+    <ConfirmModal
+      :cancel-text="confirmModalConfig.cancelText"
+      :confirm-text="confirmModalConfig.confirmText"
+      :message="confirmModalConfig.message"
+      :show="showConfirmModal"
+      :title="confirmModalConfig.title"
+      :type="confirmModalConfig.type"
+      @cancel="handleCancelModal"
+      @confirm="handleConfirmModal"
+    />
   </Teleport>
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
-import { showToast } from '@/utils/toast'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { showToast } from '@/utils/tools'
 import { useClientsStore } from '@/stores/clients'
 import { useApiKeysStore } from '@/stores/apiKeys'
-import { apiClient } from '@/config/api'
+import * as httpApis from '@/utils/http_apis'
 import AccountSelector from '@/components/common/AccountSelector.vue'
+import ConfirmModal from '@/components/common/ConfirmModal.vue'
 
 const props = defineProps({
   apiKey: {
@@ -666,7 +1034,18 @@ const props = defineProps({
   },
   accounts: {
     type: Object,
-    default: () => ({ claude: [], gemini: [] })
+    default: () => ({
+      claude: [],
+      gemini: [],
+      openai: [],
+      bedrock: [],
+      droid: [],
+      claudeGroups: [],
+      geminiGroups: [],
+      openaiGroups: [],
+      droidGroups: [],
+      openaiResponses: []
+    })
   }
 })
 
@@ -677,14 +1056,50 @@ const clientsStore = useClientsStore()
 const apiKeysStore = useApiKeysStore()
 const loading = ref(false)
 const accountsLoading = ref(false)
+
+// ConfirmModal 状态
+const showConfirmModal = ref(false)
+const confirmModalConfig = ref({
+  title: '',
+  message: '',
+  type: 'primary',
+  confirmText: '确认',
+  cancelText: '取消'
+})
+const confirmResolve = ref(null)
+
+const showConfirm = (
+  title,
+  message,
+  confirmText = '确认',
+  cancelText = '取消',
+  type = 'primary'
+) => {
+  return new Promise((resolve) => {
+    confirmModalConfig.value = { title, message, confirmText, cancelText, type }
+    confirmResolve.value = resolve
+    showConfirmModal.value = true
+  })
+}
+const handleConfirmModal = () => {
+  showConfirmModal.value = false
+  confirmResolve.value?.(true)
+}
+const handleCancelModal = () => {
+  showConfirmModal.value = false
+  confirmResolve.value?.(false)
+}
+
 const localAccounts = ref({
   claude: [],
   gemini: [],
   openai: [],
-  bedrock: [], // 添加 Bedrock 账号列表
+  bedrock: [],
+  droid: [],
   claudeGroups: [],
   geminiGroups: [],
-  openaiGroups: []
+  openaiGroups: [],
+  droidGroups: []
 })
 
 // 支持的客户端列表
@@ -702,30 +1117,68 @@ const unselectedTags = computed(() => {
   return availableTags.value.filter((tag) => !form.tags.includes(tag))
 })
 
+// 服务倍率相关
+const enableServiceRates = ref(false)
+const availableServices = [
+  { key: 'claude', label: 'Claude' },
+  { key: 'gemini', label: 'Gemini' },
+  { key: 'codex', label: 'Codex' },
+  { key: 'droid', label: 'Droid' },
+  { key: 'bedrock', label: 'Bedrock' },
+  { key: 'azure', label: 'Azure' },
+  { key: 'ccr', label: 'CCR' }
+]
+
+const payloadRuleValueTypeOptions = [
+  { value: 'string', label: '字符串' },
+  { value: 'number', label: '数字' },
+  { value: 'boolean', label: '布尔' },
+  { value: 'json', label: 'JSON' }
+]
+
+const createEmptyPayloadRule = () => ({
+  path: '',
+  valueType: 'string',
+  value: ''
+})
+
 // 表单数据
 const form = reactive({
   name: '',
+  serviceRates: {}, // API Key 级别服务倍率
   tokenLimit: '', // 保留用于检测历史数据
   rateLimitWindow: '',
   rateLimitRequests: '',
   rateLimitCost: '', // 新增：费用限制
   concurrencyLimit: '',
   dailyCostLimit: '',
+  totalCostLimit: '',
   weeklyOpusCostLimit: '',
-  permissions: 'all',
+  weeklyResetDay: 1,
+  weeklyResetHour: 0,
+  permissions: [], // 数组格式，空数组表示全部服务
   claudeAccountId: '',
   geminiAccountId: '',
   openaiAccountId: '',
-  bedrockAccountId: '', // 添加 Bedrock 账号ID
+  bedrockAccountId: '',
+  droidAccountId: '',
   enableModelRestriction: false,
   restrictedModels: [],
   modelInput: '',
   enableClientRestriction: false,
   allowedClients: [],
+  enableOpenAIResponsesCodexAdaptation: true,
+  enableOpenAIResponsesPayloadRules: false,
+  openaiResponsesPayloadRules: [],
   tags: [],
   isActive: true,
   ownerId: '' // 新增：所有者ID
 })
+
+// 更新权限（数组格式，空数组=全部服务）
+const updatePermissions = () => {
+  // form.permissions 已经是数组，由 v-model 自动管理
+}
 
 // 添加限制的模型
 const addRestrictedModel = () => {
@@ -776,22 +1229,84 @@ const removeTag = (index) => {
   form.tags.splice(index, 1)
 }
 
+const addPayloadRule = () => {
+  form.openaiResponsesPayloadRules.push(createEmptyPayloadRule())
+}
+
+const removePayloadRule = (index) => {
+  form.openaiResponsesPayloadRules.splice(index, 1)
+}
+
+const normalizePayloadRule = (rule = {}) => ({
+  path: typeof rule.path === 'string' ? rule.path.trim() : '',
+  valueType:
+    typeof rule.valueType === 'string' &&
+    payloadRuleValueTypeOptions.some((option) => option.value === rule.valueType)
+      ? rule.valueType
+      : 'string',
+  value: rule.value === undefined || rule.value === null ? '' : String(rule.value)
+})
+
+const buildPayloadRulesForSubmit = () => {
+  const normalizedRules = form.openaiResponsesPayloadRules
+    .map((rule) => normalizePayloadRule(rule))
+    .filter((rule) => rule.path)
+
+  for (const rule of normalizedRules) {
+    if (rule.value === '') {
+      continue
+    }
+
+    if (rule.valueType === 'number') {
+      if (!Number.isFinite(Number(rule.value))) {
+        showToast(`字段 ${rule.path} 的值不是合法数字`, 'error')
+        return null
+      }
+      continue
+    }
+
+    if (rule.valueType === 'boolean') {
+      const normalized = rule.value.trim().toLowerCase()
+      if (normalized !== 'true' && normalized !== 'false') {
+        showToast(`字段 ${rule.path} 的值必须是 true 或 false`, 'error')
+        return null
+      }
+      continue
+    }
+
+    if (rule.valueType === 'json') {
+      try {
+        JSON.parse(rule.value)
+      } catch (error) {
+        showToast(`字段 ${rule.path} 的值不是合法 JSON`, 'error')
+        return null
+      }
+    }
+  }
+
+  return normalizedRules
+}
+
+watch(
+  () => form.enableOpenAIResponsesPayloadRules,
+  (enabled) => {
+    if (enabled && form.openaiResponsesPayloadRules.length === 0) {
+      addPayloadRule()
+    }
+  }
+)
+
 // 更新 API Key
 const updateApiKey = async () => {
   // 检查是否设置了时间窗口但费用限制为0
   if (form.rateLimitWindow && (!form.rateLimitCost || parseFloat(form.rateLimitCost) === 0)) {
-    let confirmed = false
-    if (window.showConfirm) {
-      confirmed = await window.showConfirm(
-        '费用限制提醒',
-        '您设置了时间窗口但费用限制为0，这意味着不会有费用限制。\n\n是否继续？',
-        '继续保存',
-        '返回修改'
-      )
-    } else {
-      // 降级方案
-      confirmed = confirm('您设置了时间窗口但费用限制为0，这意味着不会有费用限制。\n是否继续？')
-    }
+    const confirmed = await showConfirm(
+      '费用限制提醒',
+      '您设置了时间窗口但费用限制为0，这意味着不会有费用限制。\n\n是否继续？',
+      '继续保存',
+      '返回修改',
+      'warning'
+    )
     if (!confirmed) {
       return
     }
@@ -801,8 +1316,25 @@ const updateApiKey = async () => {
 
   try {
     // 准备提交的数据
+    // 过滤掉空值的服务倍率
+    const filteredServiceRates = {}
+    if (enableServiceRates.value) {
+      for (const [key, value] of Object.entries(form.serviceRates)) {
+        if (value !== null && value !== undefined && value !== '') {
+          filteredServiceRates[key] = value
+        }
+      }
+    }
+
+    const payloadRules = buildPayloadRulesForSubmit()
+    if (payloadRules === null) {
+      loading.value = false
+      return
+    }
+
     const data = {
       name: form.name, // 添加名称字段
+      serviceRates: filteredServiceRates,
       tokenLimit: 0, // 清除历史token限制
       rateLimitWindow:
         form.rateLimitWindow !== '' && form.rateLimitWindow !== null
@@ -824,10 +1356,20 @@ const updateApiKey = async () => {
         form.dailyCostLimit !== '' && form.dailyCostLimit !== null
           ? parseFloat(form.dailyCostLimit)
           : 0,
+      totalCostLimit:
+        form.totalCostLimit !== '' && form.totalCostLimit !== null
+          ? parseFloat(form.totalCostLimit)
+          : 0,
       weeklyOpusCostLimit:
         form.weeklyOpusCostLimit !== '' && form.weeklyOpusCostLimit !== null
           ? parseFloat(form.weeklyOpusCostLimit)
           : 0,
+      weeklyResetDay: form.weeklyResetDay,
+      weeklyResetHour: form.weeklyResetHour,
+      enableOpenAIResponsesCodexAdaptation: form.enableOpenAIResponsesCodexAdaptation,
+      enableOpenAIResponsesPayloadRules: form.enableOpenAIResponsesPayloadRules,
+      // 规则内容独立持久化，关闭开关时也要保留已保存的休眠规则。
+      openaiResponsesPayloadRules: payloadRules,
       permissions: form.permissions,
       tags: form.tags
     }
@@ -874,6 +1416,12 @@ const updateApiKey = async () => {
       data.bedrockAccountId = null
     }
 
+    if (form.droidAccountId) {
+      data.droidAccountId = form.droidAccountId
+    } else {
+      data.droidAccountId = null
+    }
+
     // 模型限制 - 始终提交这些字段
     data.enableModelRestriction = form.enableModelRestriction
     data.restrictedModels = form.restrictedModels
@@ -890,7 +1438,7 @@ const updateApiKey = async () => {
       data.ownerId = form.ownerId
     }
 
-    const result = await apiClient.put(`/admin/api-keys/${props.apiKey.id}`, data)
+    const result = await httpApis.updateApiKeyApi(props.apiKey.id, data)
 
     if (result.success) {
       emit('success')
@@ -909,15 +1457,27 @@ const updateApiKey = async () => {
 const refreshAccounts = async () => {
   accountsLoading.value = true
   try {
-    const [claudeData, claudeConsoleData, geminiData, openaiData, bedrockData, groupsData] =
-      await Promise.all([
-        apiClient.get('/admin/claude-accounts'),
-        apiClient.get('/admin/claude-console-accounts'),
-        apiClient.get('/admin/gemini-accounts'),
-        apiClient.get('/admin/openai-accounts'),
-        apiClient.get('/admin/bedrock-accounts'), // 添加 Bedrock 账号获取
-        apiClient.get('/admin/account-groups')
-      ])
+    const [
+      claudeData,
+      claudeConsoleData,
+      geminiData,
+      geminiApiData,
+      openaiData,
+      openaiResponsesData,
+      bedrockData,
+      droidData,
+      groupsData
+    ] = await Promise.all([
+      httpApis.getClaudeAccountsApi(),
+      httpApis.getClaudeConsoleAccountsApi(),
+      httpApis.getGeminiAccountsApi(),
+      httpApis.getGeminiApiAccountsApi(),
+      httpApis.getOpenAIAccountsApi(),
+      httpApis.getOpenAIResponsesAccountsApi(),
+      httpApis.getBedrockAccountsApi(),
+      httpApis.getDroidAccountsApi(),
+      httpApis.getAccountGroupsApi()
+    ])
 
     // 合并Claude OAuth账户和Claude Console账户
     const claudeAccounts = []
@@ -944,23 +1504,67 @@ const refreshAccounts = async () => {
 
     localAccounts.value.claude = claudeAccounts
 
+    // 合并 Gemini OAuth 和 Gemini API 账号
+    const geminiAccounts = []
+
     if (geminiData.success) {
-      localAccounts.value.gemini = (geminiData.data || []).map((account) => ({
-        ...account,
-        isDedicated: account.accountType === 'dedicated'
-      }))
+      ;(geminiData.data || []).forEach((account) => {
+        geminiAccounts.push({
+          ...account,
+          platform: 'gemini',
+          isDedicated: account.accountType === 'dedicated'
+        })
+      })
     }
 
-    if (openaiData.success) {
-      localAccounts.value.openai = (openaiData.data || []).map((account) => ({
-        ...account,
-        isDedicated: account.accountType === 'dedicated'
-      }))
+    if (geminiApiData.success) {
+      ;(geminiApiData.data || []).forEach((account) => {
+        geminiAccounts.push({
+          ...account,
+          platform: 'gemini-api',
+          isDedicated: account.accountType === 'dedicated'
+        })
+      })
     }
+
+    localAccounts.value.gemini = geminiAccounts
+
+    // 合并 OpenAI 和 OpenAI-Responses 账号
+    const openaiAccounts = []
+
+    if (openaiData.success) {
+      ;(openaiData.data || []).forEach((account) => {
+        openaiAccounts.push({
+          ...account,
+          platform: 'openai',
+          isDedicated: account.accountType === 'dedicated'
+        })
+      })
+    }
+
+    if (openaiResponsesData.success) {
+      ;(openaiResponsesData.data || []).forEach((account) => {
+        openaiAccounts.push({
+          ...account,
+          platform: 'openai-responses',
+          isDedicated: account.accountType === 'dedicated'
+        })
+      })
+    }
+
+    localAccounts.value.openai = openaiAccounts
 
     if (bedrockData.success) {
       localAccounts.value.bedrock = (bedrockData.data || []).map((account) => ({
         ...account,
+        isDedicated: account.accountType === 'dedicated'
+      }))
+    }
+
+    if (droidData.success) {
+      localAccounts.value.droid = (droidData.data || []).map((account) => ({
+        ...account,
+        platform: 'droid',
         isDedicated: account.accountType === 'dedicated'
       }))
     }
@@ -971,6 +1575,7 @@ const refreshAccounts = async () => {
       localAccounts.value.claudeGroups = allGroups.filter((g) => g.platform === 'claude')
       localAccounts.value.geminiGroups = allGroups.filter((g) => g.platform === 'gemini')
       localAccounts.value.openaiGroups = allGroups.filter((g) => g.platform === 'openai')
+      localAccounts.value.droidGroups = allGroups.filter((g) => g.platform === 'droid')
     }
 
     showToast('账号列表已刷新', 'success')
@@ -984,12 +1589,12 @@ const refreshAccounts = async () => {
 // 加载用户列表
 const loadUsers = async () => {
   try {
-    const response = await apiClient.get('/admin/users')
+    const response = await httpApis.getUsersApi()
     if (response.success) {
       availableUsers.value = response.data || []
     }
   } catch (error) {
-    console.error('Failed to load users:', error)
+    // console.error('Failed to load users:', error)
     availableUsers.value = [
       {
         id: 'admin',
@@ -1015,7 +1620,7 @@ onMounted(async () => {
     supportedClients.value = clients || []
     availableTags.value = tags || []
   } catch (error) {
-    console.error('Error loading initial data:', error)
+    // console.error('Error loading initial data:', error)
     // Fallback to empty arrays if loading fails
     supportedClients.value = []
     availableTags.value = []
@@ -1023,18 +1628,53 @@ onMounted(async () => {
 
   // 初始化账号数据
   if (props.accounts) {
+    // props.accounts.gemini 已经包含了 OAuth 和 API 两种类型的账号（父组件已合并）
+    // 保留原有的 platform 属性，不要覆盖
+    const geminiAccounts = (props.accounts.gemini || []).map((account) => ({
+      ...account,
+      platform: account.platform || 'gemini' // 保留原有 platform，只在没有时设默认值
+    }))
+
+    // props.accounts.openai 只包含 openai 类型，openaiResponses 需要单独处理
+    const openaiAccounts = []
+    if (props.accounts.openai) {
+      props.accounts.openai.forEach((account) => {
+        openaiAccounts.push({
+          ...account,
+          platform: account.platform || 'openai'
+        })
+      })
+    }
+    if (props.accounts.openaiResponses) {
+      props.accounts.openaiResponses.forEach((account) => {
+        openaiAccounts.push({
+          ...account,
+          platform: account.platform || 'openai-responses'
+        })
+      })
+    }
+
     localAccounts.value = {
       claude: props.accounts.claude || [],
-      gemini: props.accounts.gemini || [],
-      openai: props.accounts.openai || [],
-      bedrock: props.accounts.bedrock || [], // 添加 Bedrock 账号
+      gemini: geminiAccounts,
+      openai: openaiAccounts,
+      bedrock: props.accounts.bedrock || [],
+      droid: (props.accounts.droid || []).map((account) => ({
+        ...account,
+        platform: account.platform || 'droid'
+      })),
       claudeGroups: props.accounts.claudeGroups || [],
       geminiGroups: props.accounts.geminiGroups || [],
-      openaiGroups: props.accounts.openaiGroups || []
+      openaiGroups: props.accounts.openaiGroups || [],
+      droidGroups: props.accounts.droidGroups || []
     }
   }
 
+  // 使用缓存的账号数据，不自动刷新（用户可点击"刷新账号"按钮手动刷新）
+
   form.name = props.apiKey.name
+  form.serviceRates = props.apiKey.serviceRates || {}
+  enableServiceRates.value = Object.keys(form.serviceRates).length > 0
 
   // 处理速率限制迁移：如果有tokenLimit且没有rateLimitCost，提示用户
   form.tokenLimit = props.apiKey.tokenLimit || ''
@@ -1043,15 +1683,49 @@ onMounted(async () => {
   // 如果有历史tokenLimit但没有rateLimitCost，提示用户需要重新设置
   if (props.apiKey.tokenLimit > 0 && !props.apiKey.rateLimitCost) {
     // 可以根据需要添加提示，或者自动迁移（这里选择让用户手动设置）
-    console.log('检测到历史Token限制，请考虑设置费用限制')
+    // console.log('检测到历史Token限制，请考虑设置费用限制')
   }
 
   form.rateLimitWindow = props.apiKey.rateLimitWindow || ''
   form.rateLimitRequests = props.apiKey.rateLimitRequests || ''
   form.concurrencyLimit = props.apiKey.concurrencyLimit || ''
   form.dailyCostLimit = props.apiKey.dailyCostLimit || ''
+  form.totalCostLimit = props.apiKey.totalCostLimit || ''
   form.weeklyOpusCostLimit = props.apiKey.weeklyOpusCostLimit || ''
-  form.permissions = props.apiKey.permissions || 'all'
+  form.weeklyResetDay = props.apiKey.weeklyResetDay || 1
+  form.weeklyResetHour = props.apiKey.weeklyResetHour || 0
+  // 处理权限数据，兼容旧格式（字符串）和新格式（数组）
+  // 有效的权限值
+  const VALID_PERMS = ['claude', 'gemini', 'openai', 'droid']
+  let perms = props.apiKey.permissions
+  // 如果是字符串，尝试 JSON.parse（Redis 可能返回 "[]" 或 "[\"gemini\"]"）
+  if (typeof perms === 'string') {
+    if (perms === 'all' || perms === '') {
+      perms = []
+    } else if (perms.startsWith('[')) {
+      try {
+        perms = JSON.parse(perms)
+      } catch {
+        perms = VALID_PERMS.includes(perms) ? [perms] : []
+      }
+    } else if (perms.includes(',')) {
+      // 兼容逗号分隔格式（如 "claude,openai"）
+      perms = perms
+        .split(',')
+        .map((p) => p.trim())
+        .filter((p) => VALID_PERMS.includes(p))
+    } else if (VALID_PERMS.includes(perms)) {
+      perms = [perms]
+    } else {
+      perms = []
+    }
+  }
+  if (Array.isArray(perms)) {
+    // 过滤掉无效值（如 "[]"）
+    form.permissions = perms.filter((p) => VALID_PERMS.includes(p))
+  } else {
+    form.permissions = []
+  }
   // 处理 Claude 账号（区分 OAuth 和 Console）
   if (props.apiKey.claudeConsoleAccountId) {
     form.claudeAccountId = `console:${props.apiKey.claudeConsoleAccountId}`
@@ -1059,22 +1733,40 @@ onMounted(async () => {
     form.claudeAccountId = props.apiKey.claudeAccountId || ''
   }
   form.geminiAccountId = props.apiKey.geminiAccountId || ''
+
+  // 处理 OpenAI 账号 - 直接使用后端传来的值（已包含 responses: 前缀）
   form.openaiAccountId = props.apiKey.openaiAccountId || ''
-  form.bedrockAccountId = props.apiKey.bedrockAccountId || '' // 添加 Bedrock 账号ID初始化
+
+  form.bedrockAccountId = props.apiKey.bedrockAccountId || ''
+  form.droidAccountId = props.apiKey.droidAccountId || ''
   form.restrictedModels = props.apiKey.restrictedModels || []
   form.allowedClients = props.apiKey.allowedClients || []
   form.tags = props.apiKey.tags || []
-  // 从后端数据中获取实际的启用状态，而不是根据数组长度推断
-  form.enableModelRestriction = props.apiKey.enableModelRestriction || false
-  form.enableClientRestriction = props.apiKey.enableClientRestriction || false
-  // 初始化活跃状态，默认为 true
-  form.isActive = props.apiKey.isActive !== undefined ? props.apiKey.isActive : true
+  // 从后端数据中获取实际的启用状态，强制转换为布尔值（Redis返回的是字符串）
+  form.enableModelRestriction =
+    props.apiKey.enableModelRestriction === true || props.apiKey.enableModelRestriction === 'true'
+  form.enableClientRestriction =
+    props.apiKey.enableClientRestriction === true || props.apiKey.enableClientRestriction === 'true'
+  form.enableOpenAIResponsesCodexAdaptation =
+    props.apiKey.enableOpenAIResponsesCodexAdaptation === undefined ||
+    props.apiKey.enableOpenAIResponsesCodexAdaptation === true ||
+    props.apiKey.enableOpenAIResponsesCodexAdaptation === 'true'
+  form.enableOpenAIResponsesPayloadRules =
+    props.apiKey.enableOpenAIResponsesPayloadRules === true ||
+    props.apiKey.enableOpenAIResponsesPayloadRules === 'true'
+  form.openaiResponsesPayloadRules = Array.isArray(props.apiKey.openaiResponsesPayloadRules)
+    ? props.apiKey.openaiResponsesPayloadRules.map((rule) => normalizePayloadRule(rule))
+    : []
+  if (form.enableOpenAIResponsesPayloadRules && form.openaiResponsesPayloadRules.length === 0) {
+    addPayloadRule()
+  }
+  // 初始化活跃状态，默认为 true（强制转换为布尔值，因为Redis返回字符串）
+  form.isActive =
+    props.apiKey.isActive === undefined ||
+    props.apiKey.isActive === true ||
+    props.apiKey.isActive === 'true'
 
   // 初始化所有者
   form.ownerId = props.apiKey.userId || 'admin'
 })
 </script>
-
-<style scoped>
-/* 表单样式由全局样式提供 */
-</style>

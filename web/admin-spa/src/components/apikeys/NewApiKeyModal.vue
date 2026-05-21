@@ -93,35 +93,58 @@
               </div>
             </div>
             <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
-              点击眼睛图标切换显示模式，使用下方按钮复制完整 API Key
+              点击眼睛图标切换显示模式，使用下方按钮复制环境变量配置
             </p>
           </div>
         </div>
 
         <!-- 操作按钮 -->
-        <div class="flex gap-3">
+        <div class="flex flex-col gap-3 sm:gap-4">
+          <div class="flex flex-col gap-3 sm:flex-row sm:gap-4">
+            <button
+              class="flex w-full items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-5 py-3 text-sm font-semibold text-blue-700 transition-colors hover:border-blue-300 hover:bg-blue-100 dark:border-blue-500/50 dark:bg-blue-500/10 dark:text-blue-200 dark:hover:bg-blue-500/20 sm:flex-1 sm:text-base"
+              @click="copyKeyOnly"
+            >
+              <i class="fas fa-key" />
+              仅复制密钥
+            </button>
+            <button
+              class="btn btn-primary flex w-full items-center justify-center gap-2 px-5 py-3 text-sm font-semibold sm:flex-1 sm:text-base"
+              @click="copyFullConfig"
+            >
+              <i class="fas fa-copy" />
+              复制Claude配置
+            </button>
+          </div>
           <button
-            class="btn btn-primary flex flex-1 items-center justify-center gap-2 px-6 py-3 font-semibold"
-            @click="copyApiKey"
-          >
-            <i class="fas fa-copy" />
-            复制 API Key
-          </button>
-          <button
-            class="rounded-xl border border-gray-300 bg-gray-200 px-6 py-3 font-semibold text-gray-800 transition-colors hover:bg-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
+            class="flex w-full items-center justify-center gap-2 rounded-xl border border-gray-300 bg-gray-200 px-5 py-3 text-sm font-semibold text-gray-800 transition-colors hover:border-gray-400 hover:bg-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600 sm:text-base"
             @click="handleClose"
           >
+            <i class="fas fa-check-circle" />
             我已保存
           </button>
         </div>
       </div>
     </div>
+
+    <!-- ConfirmModal -->
+    <ConfirmModal
+      :cancel-text="confirmModalConfig.cancelText"
+      :confirm-text="confirmModalConfig.confirmText"
+      :message="confirmModalConfig.message"
+      :show="showConfirmModal"
+      :title="confirmModalConfig.title"
+      :type="confirmModalConfig.type"
+      @cancel="handleCancelModal"
+      @confirm="handleConfirmModal"
+    />
   </Teleport>
 </template>
 
 <script setup>
-import { ref } from 'vue'
-import { showToast } from '@/utils/toast'
+import { ref, computed } from 'vue'
+import { showToast } from '@/utils/tools'
+import ConfirmModal from '@/components/common/ConfirmModal.vue'
 
 const props = defineProps({
   apiKey: {
@@ -133,6 +156,74 @@ const props = defineProps({
 const emit = defineEmits(['close'])
 
 const showFullKey = ref(false)
+
+// ConfirmModal 状态
+const showConfirmModal = ref(false)
+const confirmModalConfig = ref({
+  title: '',
+  message: '',
+  type: 'primary',
+  confirmText: '确认',
+  cancelText: '取消'
+})
+const confirmResolve = ref(null)
+
+const showConfirm = (
+  title,
+  message,
+  confirmText = '确认',
+  cancelText = '取消',
+  type = 'primary'
+) => {
+  return new Promise((resolve) => {
+    confirmModalConfig.value = { title, message, confirmText, cancelText, type }
+    confirmResolve.value = resolve
+    showConfirmModal.value = true
+  })
+}
+const handleConfirmModal = () => {
+  showConfirmModal.value = false
+  confirmResolve.value?.(true)
+}
+const handleCancelModal = () => {
+  showConfirmModal.value = false
+  confirmResolve.value?.(false)
+}
+
+// 获取 API Base URL 前缀
+const getBaseUrlPrefix = () => {
+  // 优先使用环境变量配置的自定义前缀
+  const customPrefix = import.meta.env.VITE_API_BASE_PREFIX
+  if (customPrefix) {
+    // 去除末尾的斜杠
+    return customPrefix.replace(/\/$/, '')
+  }
+
+  // 否则使用当前浏览器访问地址
+  if (typeof window !== 'undefined') {
+    const protocol = window.location.protocol // http: 或 https:
+    const host = window.location.host // 域名和端口
+    // 提取协议和主机部分，去除路径
+    let origin = protocol + '//' + host
+
+    // 如果当前URL包含路径，只取协议+主机部分
+    const currentUrl = window.location.href
+    const pathStart = currentUrl.indexOf('/', 8) // 跳过 http:// 或 https://
+    if (pathStart !== -1) {
+      origin = currentUrl.substring(0, pathStart)
+    }
+
+    return origin
+  }
+
+  // 服务端渲染或其他情况的回退
+  return ''
+}
+
+// 计算完整的 API Base URL
+const currentBaseUrl = computed(() => {
+  return getBaseUrlPrefix() + '/api'
+})
 
 // 切换密钥可见性
 const toggleKeyVisibility = () => {
@@ -155,27 +246,19 @@ const getDisplayedApiKey = () => {
   }
 }
 
-// 复制 API Key
-const copyApiKey = async () => {
-  const key = props.apiKey.apiKey || props.apiKey.key || ''
-  if (!key) {
-    showToast('API Key 不存在', 'error')
-    return
-  }
-
+// 通用复制工具，包含降级处理
+const copyTextWithFallback = async (text, successMessage) => {
   try {
-    await navigator.clipboard.writeText(key)
-    showToast('API Key 已复制到剪贴板', 'success')
+    await navigator.clipboard.writeText(text)
+    showToast(successMessage, 'success')
   } catch (error) {
-    console.error('Failed to copy:', error)
-    // 降级方案：创建一个临时文本区域
     const textArea = document.createElement('textarea')
-    textArea.value = key
+    textArea.value = text
     document.body.appendChild(textArea)
     textArea.select()
     try {
       document.execCommand('copy')
-      showToast('API Key 已复制到剪贴板', 'success')
+      showToast(successMessage, 'success')
     } catch (fallbackError) {
       showToast('复制失败，请手动复制', 'error')
     } finally {
@@ -184,47 +267,57 @@ const copyApiKey = async () => {
   }
 }
 
+// 复制完整配置（包含提示信息）
+const copyFullConfig = async () => {
+  const key = props.apiKey.apiKey || props.apiKey.key || ''
+  if (!key) {
+    showToast('API Key 不存在', 'error')
+    return
+  }
+
+  // 构建环境变量配置格式
+  const configText = `export ANTHROPIC_BASE_URL="${currentBaseUrl.value}"
+export ANTHROPIC_AUTH_TOKEN="${key}"`
+
+  await copyTextWithFallback(configText, '配置信息已复制到剪贴板')
+}
+
+// 仅复制密钥
+const copyKeyOnly = async () => {
+  const key = props.apiKey.apiKey || props.apiKey.key || ''
+  if (!key) {
+    showToast('API Key 不存在', 'error')
+    return
+  }
+
+  await copyTextWithFallback(key, 'API Key 已复制')
+}
+
 // 关闭弹窗（带确认）
 const handleClose = async () => {
-  if (window.showConfirm) {
-    const confirmed = await window.showConfirm(
-      '关闭提醒',
-      '关闭后将无法再次查看完整的API Key，请确保已经妥善保存。\n\n确定要关闭吗？',
-      '确定关闭',
-      '取消'
-    )
-    if (confirmed) {
-      emit('close')
-    }
-  } else {
-    // 降级方案
-    const confirmed = confirm(
-      '关闭后将无法再次查看完整的API Key，请确保已经妥善保存。\n\n确定要关闭吗？'
-    )
-    if (confirmed) {
-      emit('close')
-    }
+  const confirmed = await showConfirm(
+    '关闭提醒',
+    '关闭后将无法再次查看完整的API Key，请确保已经妥善保存。\n\n确定要关闭吗？',
+    '确定关闭',
+    '取消',
+    'warning'
+  )
+  if (confirmed) {
+    emit('close')
   }
 }
 
 // 直接关闭（不带确认）
 const handleDirectClose = async () => {
-  if (window.showConfirm) {
-    const confirmed = await window.showConfirm(
-      '确定要关闭吗？',
-      '您还没有保存API Key，关闭后将无法再次查看。\n\n建议您先复制API Key再关闭。',
-      '仍然关闭',
-      '返回复制'
-    )
-    if (confirmed) {
-      emit('close')
-    }
-  } else {
-    // 降级方案
-    const confirmed = confirm('您还没有保存API Key，关闭后将无法再次查看。\n\n确定要关闭吗？')
-    if (confirmed) {
-      emit('close')
-    }
+  const confirmed = await showConfirm(
+    '确定要关闭吗？',
+    '您还没有保存API Key，关闭后将无法再次查看。\n\n建议您先复制API Key再关闭。',
+    '仍然关闭',
+    '返回复制',
+    'warning'
+  )
+  if (confirmed) {
+    emit('close')
   }
 }
 </script>

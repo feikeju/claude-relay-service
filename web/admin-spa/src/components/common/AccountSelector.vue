@@ -2,7 +2,7 @@
   <div ref="triggerRef" class="relative">
     <!-- 选择器主体 -->
     <div
-      class="form-input flex w-full cursor-pointer items-center justify-between dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
+      class="form-input flex w-full cursor-pointer items-center justify-between border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
       :class="{ 'opacity-50': disabled }"
       @click="!disabled && toggleDropdown()"
     >
@@ -40,7 +40,7 @@
               <input
                 ref="searchInput"
                 v-model="searchQuery"
-                class="form-input w-full text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400"
+                class="form-input w-full border-gray-300 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400"
                 placeholder="搜索账号名称..."
                 style="padding-left: 40px; padding-right: 36px"
                 type="text"
@@ -62,6 +62,28 @@
 
           <!-- 选项列表 -->
           <div class="custom-scrollbar flex-1 overflow-y-auto">
+            <!-- 特殊选项 -->
+            <div
+              v-if="specialOptionsList.length > 0"
+              class="border-b border-gray-200 dark:border-gray-600"
+            >
+              <div
+                v-for="option in specialOptionsList"
+                :key="`special-${option.value}`"
+                class="cursor-pointer px-4 py-2 transition-colors hover:bg-gray-50 dark:hover:bg-gray-700"
+                :class="{ 'bg-blue-50 dark:bg-blue-900/20': modelValue === option.value }"
+                @click="selectAccount(option.value)"
+              >
+                <span class="text-gray-700 dark:text-gray-300">{{ option.label }}</span>
+                <span
+                  v-if="option.description"
+                  class="ml-2 text-xs text-gray-400 dark:text-gray-500"
+                >
+                  {{ option.description }}
+                </span>
+              </div>
+            </div>
+
             <!-- 默认选项 -->
             <div
               class="cursor-pointer px-4 py-2 transition-colors hover:bg-gray-50 dark:hover:bg-gray-700"
@@ -99,7 +121,17 @@
               <div
                 class="bg-gray-50 px-4 py-2 text-xs font-semibold text-gray-500 dark:bg-gray-700 dark:text-gray-400"
               >
-                {{ platform === 'claude' ? 'Claude OAuth 专属账号' : 'OAuth 专属账号' }}
+                {{
+                  platform === 'claude'
+                    ? 'Claude OAuth 专属账号'
+                    : platform === 'openai'
+                      ? 'OpenAI 专属账号'
+                      : platform === 'droid'
+                        ? 'Droid 专属账号'
+                        : platform === 'gemini'
+                          ? 'Gemini OAuth 专属账号'
+                          : 'OAuth 专属账号'
+                }}
               </div>
               <div
                 v-for="account in filteredOAuthAccounts"
@@ -170,6 +202,84 @@
               </div>
             </div>
 
+            <!-- OpenAI-Responses 账号（仅 OpenAI） -->
+            <div v-if="platform === 'openai' && filteredOpenAIResponsesAccounts.length > 0">
+              <div
+                class="bg-gray-50 px-4 py-2 text-xs font-semibold text-gray-500 dark:bg-gray-700 dark:text-gray-400"
+              >
+                OpenAI-Responses 专属账号
+              </div>
+              <div
+                v-for="account in filteredOpenAIResponsesAccounts"
+                :key="account.id"
+                class="cursor-pointer px-4 py-2 transition-colors hover:bg-gray-50 dark:hover:bg-gray-700"
+                :class="{
+                  'bg-blue-50 dark:bg-blue-900/20': modelValue === `responses:${account.id}`
+                }"
+                @click="selectAccount(`responses:${account.id}`)"
+              >
+                <div class="flex items-center justify-between">
+                  <div>
+                    <span class="text-gray-700 dark:text-gray-300">{{ account.name }}</span>
+                    <span
+                      class="ml-2 rounded-full px-2 py-0.5 text-xs"
+                      :class="
+                        account.isActive === 'true' || account.isActive === true
+                          ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                          : account.status === 'rate_limited'
+                            ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
+                            : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                      "
+                    >
+                      {{ getAccountStatusText(account) }}
+                    </span>
+                  </div>
+                  <span class="text-xs text-gray-400 dark:text-gray-500">
+                    {{ formatDate(account.createdAt) }}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Gemini-API 账号（仅 Gemini） -->
+            <div v-if="platform === 'gemini' && filteredGeminiApiAccounts.length > 0">
+              <div
+                class="bg-gray-50 px-4 py-2 text-xs font-semibold text-gray-500 dark:bg-gray-700 dark:text-gray-400"
+              >
+                Gemini-API 专属账号
+              </div>
+              <div
+                v-for="account in filteredGeminiApiAccounts"
+                :key="account.id"
+                class="cursor-pointer px-4 py-2 transition-colors hover:bg-gray-50 dark:hover:bg-gray-700"
+                :class="{
+                  'bg-blue-50 dark:bg-blue-900/20': modelValue === `api:${account.id}`
+                }"
+                @click="selectAccount(`api:${account.id}`)"
+              >
+                <div class="flex items-center justify-between">
+                  <div>
+                    <span class="text-gray-700 dark:text-gray-300">{{ account.name }}</span>
+                    <span
+                      class="ml-2 rounded-full px-2 py-0.5 text-xs"
+                      :class="
+                        account.isActive === 'true' || account.isActive === true
+                          ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                          : account.status === 'rate_limited'
+                            ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
+                            : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                      "
+                    >
+                      {{ getAccountStatusText(account) }}
+                    </span>
+                  </div>
+                  <span class="text-xs text-gray-400 dark:text-gray-500">
+                    {{ formatDate(account.createdAt) }}
+                  </span>
+                </div>
+              </div>
+            </div>
+
             <!-- 无搜索结果 -->
             <div
               v-if="searchQuery && !hasResults"
@@ -187,6 +297,7 @@
 
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { formatDate } from '@/utils/tools'
 
 const props = defineProps({
   modelValue: {
@@ -196,7 +307,7 @@ const props = defineProps({
   platform: {
     type: String,
     required: true,
-    validator: (value) => ['claude', 'gemini'].includes(value)
+    validator: (value) => ['claude', 'gemini', 'openai', 'bedrock', 'droid'].includes(value)
   },
   accounts: {
     type: Array,
@@ -217,6 +328,10 @@ const props = defineProps({
   defaultOptionText: {
     type: String,
     default: '使用共享账号池'
+  },
+  specialOptions: {
+    type: Array,
+    default: () => []
   }
 })
 
@@ -229,9 +344,17 @@ const dropdownRef = ref(null)
 const dropdownStyle = ref({})
 const triggerRef = ref(null)
 const lastDirection = ref('') // 记住上次的显示方向
+const specialOptionsList = computed(() => props.specialOptions || [])
 
 // 获取选中的标签
 const selectedLabel = computed(() => {
+  const matchedSpecial = specialOptionsList.value.find(
+    (option) => option.value === props.modelValue
+  )
+  if (matchedSpecial) {
+    return matchedSpecial.label
+  }
+
   // 如果没有选中值，显示默认选项文本
   if (!props.modelValue) return props.defaultOptionText
 
@@ -251,6 +374,22 @@ const selectedLabel = computed(() => {
     return account ? `${account.name} (${getAccountStatusText(account)})` : ''
   }
 
+  // OpenAI-Responses 账号
+  if (props.modelValue.startsWith('responses:')) {
+    const accountId = props.modelValue.substring(10)
+    const account = props.accounts.find(
+      (a) => a.id === accountId && a.platform === 'openai-responses'
+    )
+    return account ? `${account.name} (${getAccountStatusText(account)})` : ''
+  }
+
+  // Gemini-API 账号
+  if (props.modelValue.startsWith('api:')) {
+    const accountId = props.modelValue.substring(4)
+    const account = props.accounts.find((a) => a.id === accountId && a.platform === 'gemini-api')
+    return account ? `${account.name} (${getAccountStatusText(account)})` : ''
+  }
+
   // OAuth 账号
   const account = props.accounts.find((a) => a.id === props.modelValue)
   return account ? `${account.name} (${getAccountStatusText(account)})` : ''
@@ -260,8 +399,11 @@ const selectedLabel = computed(() => {
 const getAccountStatusText = (account) => {
   if (!account) return '未知'
 
+  // 处理 OpenAI-Responses 账号（isActive 可能是字符串）
+  const isActive = account.isActive === 'true' || account.isActive === true
+
   // 优先使用 isActive 判断
-  if (account.isActive === false) {
+  if (!isActive) {
     // 根据 status 提供更详细的状态信息
     switch (account.status) {
       case 'unauthorized':
@@ -272,9 +414,16 @@ const getAccountStatusText = (account) => {
         return '待验证'
       case 'rate_limited':
         return '限流中'
+      case 'quota_exceeded':
+        return '额度超限'
       default:
         return '异常'
     }
+  }
+
+  // 对于激活的账号，如果是限流状态也要显示
+  if (account.status === 'rate_limited') {
+    return '限流中'
   }
 
   return '正常'
@@ -289,22 +438,48 @@ const sortedAccounts = computed(() => {
   })
 })
 
-// 过滤的分组
+// 过滤的分组（根据平台类型过滤）
 const filteredGroups = computed(() => {
-  if (!searchQuery.value) return props.groups
-  const query = searchQuery.value.toLowerCase()
-  return props.groups.filter((group) => group.name.toLowerCase().includes(query))
+  // 只显示与当前平台匹配的分组
+  let groups = props.groups.filter((group) => {
+    // 如果分组有platform属性，则必须匹配当前平台
+    // 如果没有platform属性，则认为是旧数据，根据平台判断
+    if (group.platform) {
+      return group.platform === props.platform
+    }
+    // 向后兼容：如果没有platform字段，通过其他方式判断
+    return true
+  })
+
+  if (searchQuery.value) {
+    const query = searchQuery.value.toLowerCase()
+    groups = groups.filter((group) => group.name.toLowerCase().includes(query))
+  }
+
+  return groups
 })
 
 // 过滤的 OAuth 账号
 const filteredOAuthAccounts = computed(() => {
-  let accounts = sortedAccounts.value.filter(
-    (a) =>
-      a.accountType === 'dedicated' &&
-      (props.platform === 'claude'
-        ? a.platform === 'claude-oauth'
-        : a.platform !== 'claude-console')
-  )
+  let accounts = []
+
+  if (props.platform === 'claude') {
+    accounts = sortedAccounts.value.filter((a) => a.platform === 'claude-oauth')
+  } else if (props.platform === 'openai') {
+    // 对于 OpenAI，只显示 openai 类型的账号
+    accounts = sortedAccounts.value.filter((a) => a.platform === 'openai')
+  } else if (props.platform === 'droid') {
+    accounts = sortedAccounts.value.filter((a) => a.platform === 'droid')
+  } else if (props.platform === 'gemini') {
+    // 对于 Gemini，只显示 OAuth 类型的账号（排除 gemini-api）
+    accounts = sortedAccounts.value.filter((a) => a.platform === 'gemini')
+  } else {
+    // 其他平台显示所有非特殊类型的账号
+    accounts = sortedAccounts.value.filter(
+      (a) =>
+        !['claude-oauth', 'claude-console', 'openai-responses', 'gemini-api'].includes(a.platform)
+    )
+  }
 
   if (searchQuery.value) {
     const query = searchQuery.value.toLowerCase()
@@ -318,9 +493,35 @@ const filteredOAuthAccounts = computed(() => {
 const filteredConsoleAccounts = computed(() => {
   if (props.platform !== 'claude') return []
 
-  let accounts = sortedAccounts.value.filter(
-    (a) => a.accountType === 'dedicated' && a.platform === 'claude-console'
-  )
+  let accounts = sortedAccounts.value.filter((a) => a.platform === 'claude-console')
+
+  if (searchQuery.value) {
+    const query = searchQuery.value.toLowerCase()
+    accounts = accounts.filter((account) => account.name.toLowerCase().includes(query))
+  }
+
+  return accounts
+})
+
+// 过滤的 OpenAI-Responses 账号
+const filteredOpenAIResponsesAccounts = computed(() => {
+  if (props.platform !== 'openai') return []
+
+  let accounts = sortedAccounts.value.filter((a) => a.platform === 'openai-responses')
+
+  if (searchQuery.value) {
+    const query = searchQuery.value.toLowerCase()
+    accounts = accounts.filter((account) => account.name.toLowerCase().includes(query))
+  }
+
+  return accounts
+})
+
+// 过滤的 Gemini-API 账号
+const filteredGeminiApiAccounts = computed(() => {
+  if (props.platform !== 'gemini') return []
+
+  let accounts = sortedAccounts.value.filter((a) => a.platform === 'gemini-api')
 
   if (searchQuery.value) {
     const query = searchQuery.value.toLowerCase()
@@ -335,28 +536,13 @@ const hasResults = computed(() => {
   return (
     filteredGroups.value.length > 0 ||
     filteredOAuthAccounts.value.length > 0 ||
-    filteredConsoleAccounts.value.length > 0
+    filteredConsoleAccounts.value.length > 0 ||
+    filteredOpenAIResponsesAccounts.value.length > 0 ||
+    filteredGeminiApiAccounts.value.length > 0
   )
 })
 
 // 格式化日期
-const formatDate = (dateString) => {
-  if (!dateString) return ''
-  const date = new Date(dateString)
-  const now = new Date()
-  const diffInHours = (now - date) / (1000 * 60 * 60)
-
-  if (diffInHours < 24) {
-    return '今天创建'
-  } else if (diffInHours < 48) {
-    return '昨天创建'
-  } else if (diffInHours < 168) {
-    // 7天内
-    return `${Math.floor(diffInHours / 24)} 天前`
-  } else {
-    return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
-  }
-}
 
 // 更新下拉菜单位置
 const updateDropdownPosition = () => {

@@ -37,6 +37,7 @@
     "docker:down": "docker-compose down",
     "migrate:apikey-expiry": "node scripts/migrate-apikey-expiry.js",
     "migrate:apikey-expiry:dry": "node scripts/migrate-apikey-expiry.js --dry-run",
+    "migrate:request-detail-retention-hours": "node scripts/reset-request-detail-retention-hours.js",
     "migrate:fix-usage-stats": "node scripts/fix-usage-stats.js",
     "data:export": "node scripts/data-transfer.js export",
     "data:import": "node scripts/data-transfer.js import",
@@ -65,9 +66,12 @@
     "ioredis": "^5.3.2",
     "ldapjs": "^3.0.7",
     "morgan": "^1.10.0",
+    "node-cron": "^4.2.1",
+    "nodemailer": "^7.0.6",
     "ora": "^5.4.1",
     "rate-limiter-flexible": "^5.0.5",
     "socks-proxy-agent": "^8.0.2",
+    "string-similarity": "^4.0.4",
     "table": "^6.8.1",
     "uuid": "^9.0.1",
     "winston": "^3.11.0",
@@ -81,6 +85,7 @@
     "jest": "^29.7.0",
     "nodemon": "^3.0.1",
     "prettier": "^3.6.2",
+    "prettier-plugin-tailwindcss": "^0.7.2",
     "supertest": "^6.3.3"
   },
   "engines": {

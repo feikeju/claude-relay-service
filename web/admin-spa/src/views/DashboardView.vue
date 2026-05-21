@@ -119,6 +119,20 @@
                     dashboardData.accountsByPlatform.azure_openai.total
                   }}</span>
                 </div>
+                <!-- OpenAI-Responses账户 -->
+                <div
+                  v-if="
+                    dashboardData.accountsByPlatform['openai-responses'] &&
+                    dashboardData.accountsByPlatform['openai-responses'].total > 0
+                  "
+                  class="inline-flex items-center gap-0.5"
+                  :title="`OpenAI Responses: ${dashboardData.accountsByPlatform['openai-responses'].total} 个 (正常: ${dashboardData.accountsByPlatform['openai-responses'].normal})`"
+                >
+                  <i class="fas fa-server text-xs text-cyan-600" />
+                  <span class="text-xs font-medium text-gray-700 dark:text-gray-300">{{
+                    dashboardData.accountsByPlatform['openai-responses'].total
+                  }}</span>
+                </div>
               </div>
             </div>
             <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
@@ -177,6 +191,105 @@
           </div>
           <div class="stat-icon flex-shrink-0 bg-gradient-to-br from-yellow-500 to-orange-500">
             <i class="fas fa-heartbeat" />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 账户余额/配额汇总 -->
+    <div class="mb-4 grid grid-cols-1 gap-3 sm:mb-6 sm:grid-cols-2 sm:gap-4 md:mb-8 md:gap-6">
+      <div class="stat-card">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="mb-1 text-xs font-semibold text-gray-600 dark:text-gray-400 sm:text-sm">
+              账户余额/配额
+            </p>
+            <p class="text-2xl font-bold text-gray-900 dark:text-gray-100 sm:text-3xl">
+              {{ formatCurrencyUsd(balanceSummary.totalBalance || 0) }}
+            </p>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              低余额: {{ balanceSummary.lowBalanceCount || 0 }} | 总成本:
+              {{ formatCurrencyUsd(balanceSummary.totalCost || 0) }}
+            </p>
+          </div>
+          <div class="stat-icon flex-shrink-0 bg-gradient-to-br from-emerald-500 to-green-600">
+            <i class="fas fa-wallet" />
+          </div>
+        </div>
+
+        <div class="mt-3 flex items-center justify-between gap-3">
+          <p class="text-xs text-gray-500 dark:text-gray-400">
+            更新时间: {{ formatLastUpdate(balanceSummaryUpdatedAt) }}
+          </p>
+          <button
+            class="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm transition-all duration-200 hover:border-gray-300 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:border-gray-500"
+            :disabled="loadingBalanceSummary"
+            @click="loadBalanceSummary"
+          >
+            <i :class="['fas', loadingBalanceSummary ? 'fa-spinner fa-spin' : 'fa-sync-alt']" />
+            刷新
+          </button>
+        </div>
+      </div>
+
+      <div class="card p-4 sm:p-6">
+        <div class="mb-3 flex items-center justify-between">
+          <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100">低余额账户</h3>
+          <span class="text-xs text-gray-500 dark:text-gray-400">
+            {{ lowBalanceAccounts.length }} 个
+          </span>
+        </div>
+
+        <div
+          v-if="loadingBalanceSummary"
+          class="py-6 text-center text-sm text-gray-500 dark:text-gray-400"
+        >
+          正在加载...
+        </div>
+        <div
+          v-else-if="lowBalanceAccounts.length === 0"
+          class="py-6 text-center text-sm text-green-600 dark:text-green-400"
+        >
+          全部正常
+        </div>
+        <div v-else class="max-h-64 space-y-2 overflow-y-auto">
+          <div
+            v-for="account in lowBalanceAccounts"
+            :key="account.accountId"
+            class="rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-900/60 dark:bg-red-900/20"
+          >
+            <div class="flex items-center justify-between gap-2">
+              <div class="truncate text-sm font-medium text-gray-900 dark:text-gray-100">
+                {{ account.name || account.accountId }}
+              </div>
+              <span
+                class="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:bg-gray-700 dark:text-gray-300"
+              >
+                {{ getBalancePlatformLabel(account.platform) }}
+              </span>
+            </div>
+            <div class="mt-1 text-xs text-gray-600 dark:text-gray-400">
+              <span v-if="account.balance">余额: {{ account.balance.formattedAmount }}</span>
+              <span v-else
+                >今日成本: {{ formatCurrencyUsd(account.statistics?.dailyCost || 0) }}</span
+              >
+            </div>
+            <div v-if="account.quota && typeof account.quota.percentage === 'number'" class="mt-2">
+              <div
+                class="mb-1 flex items-center justify-between text-xs text-gray-600 dark:text-gray-400"
+              >
+                <span>配额使用</span>
+                <span class="text-red-600 dark:text-red-400">
+                  {{ account.quota.percentage.toFixed(1) }}%
+                </span>
+              </div>
+              <div class="h-2 w-full rounded-full bg-gray-200 dark:bg-gray-700">
+                <div
+                  class="h-2 rounded-full bg-red-500"
+                  :style="{ width: `${Math.min(100, account.quota.percentage)}%` }"
+                ></div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -607,15 +720,71 @@
         </div>
       </div>
     </div>
+
+    <!-- 账号使用趋势图 -->
+    <div class="mb-4 sm:mb-6 md:mb-8">
+      <div class="card p-4 sm:p-6">
+        <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+            <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100 sm:text-lg">
+              账号使用趋势
+            </h3>
+            <span class="text-xs text-gray-500 dark:text-gray-400 sm:text-sm">
+              当前分组：{{ accountUsageTrendData.groupLabel || '未选择' }}
+            </span>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <div class="flex gap-1 rounded-lg bg-gray-100 p-1 dark:bg-gray-700">
+              <button
+                v-for="option in accountGroupOptions"
+                :key="option.value"
+                :class="[
+                  'rounded-md px-2 py-1 text-xs font-medium transition-colors sm:px-3 sm:text-sm',
+                  accountUsageGroup === option.value
+                    ? 'bg-white text-blue-600 shadow-sm dark:bg-gray-800'
+                    : 'text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100'
+                ]"
+                @click="handleAccountUsageGroupChange(option.value)"
+              >
+                {{ option.label }}
+              </button>
+            </div>
+          </div>
+        </div>
+        <div
+          class="mb-4 flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-400 sm:text-sm"
+        >
+          <span>共 {{ accountUsageTrendData.totalAccounts || 0 }} 个账号</span>
+          <span
+            v-if="accountUsageTrendData.topAccounts && accountUsageTrendData.topAccounts.length"
+          >
+            显示消耗排名前 {{ accountUsageTrendData.topAccounts.length }} 个账号
+          </span>
+        </div>
+        <div
+          v-if="!accountUsageTrendData.data || accountUsageTrendData.data.length === 0"
+          class="py-12 text-center text-sm text-gray-500 dark:text-gray-400"
+        >
+          暂无账号使用数据
+        </div>
+        <div v-else class="sm:h-[350px]" style="height: 300px">
+          <canvas ref="accountUsageTrendChart" />
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted, onUnmounted, watch, nextTick, computed } from 'vue'
 import { storeToRefs } from 'pinia'
+import Chart from 'chart.js/auto'
+
 import { useDashboardStore } from '@/stores/dashboard'
 import { useThemeStore } from '@/stores/theme'
-import Chart from 'chart.js/auto'
+import { formatNumber, showToast } from '@/utils/tools'
+
+import { getBalanceSummaryApi } from '@/utils/http_apis'
 
 const dashboardStore = useDashboardStore()
 const themeStore = useThemeStore()
@@ -627,11 +796,12 @@ const {
   dashboardModelStats,
   trendData,
   apiKeysTrendData,
+  accountUsageTrendData,
+  accountUsageGroup,
   formattedUptime,
   dateFilter,
   trendGranularity,
-  apiKeysTrendMetric,
-  defaultTime
+  apiKeysTrendMetric
 } = storeToRefs(dashboardStore)
 
 const {
@@ -641,16 +811,119 @@ const {
   onCustomDateRangeChange,
   setTrendGranularity,
   refreshChartsData,
+  setAccountUsageGroup,
   disabledDate
 } = dashboardStore
+
+// 日期选择器默认时间
+const defaultTime = [new Date(2000, 1, 1, 0, 0, 0), new Date(2000, 2, 1, 23, 59, 59)]
 
 // Chart 实例
 const modelUsageChart = ref(null)
 const usageTrendChart = ref(null)
 const apiKeysUsageTrendChart = ref(null)
+const accountUsageTrendChart = ref(null)
 let modelUsageChartInstance = null
 let usageTrendChartInstance = null
 let apiKeysUsageTrendChartInstance = null
+let accountUsageTrendChartInstance = null
+
+const accountGroupOptions = [
+  { value: 'claude', label: 'Claude' },
+  { value: 'openai', label: 'OpenAI' },
+  { value: 'gemini', label: 'Gemini' },
+  { value: 'droid', label: 'Droid' }
+]
+
+const accountTrendUpdating = ref(false)
+
+// 余额/配额汇总
+const balanceSummary = ref({
+  totalBalance: 0,
+  totalCost: 0,
+  lowBalanceCount: 0,
+  platforms: {}
+})
+const loadingBalanceSummary = ref(false)
+const balanceSummaryUpdatedAt = ref(null)
+
+const getBalancePlatformLabel = (platform) => {
+  const map = {
+    claude: 'Claude',
+    'claude-console': 'Claude Console',
+    gemini: 'Gemini',
+    'gemini-api': 'Gemini API',
+    openai: 'OpenAI',
+    'openai-responses': 'OpenAI Responses',
+    azure_openai: 'Azure OpenAI',
+    bedrock: 'Bedrock',
+    droid: 'Droid',
+    ccr: 'CCR'
+  }
+  return map[platform] || platform
+}
+
+const lowBalanceAccounts = computed(() => {
+  const result = []
+  const platforms = balanceSummary.value?.platforms || {}
+
+  Object.entries(platforms).forEach(([platform, data]) => {
+    const list = Array.isArray(data?.accounts) ? data.accounts : []
+    list.forEach((entry) => {
+      const accountData = entry?.data
+      if (!accountData) return
+
+      const amount = accountData.balance?.amount
+      const percentage = accountData.quota?.percentage
+
+      const isLowBalance = typeof amount === 'number' && amount < 10
+      const isHighUsage = typeof percentage === 'number' && percentage > 90
+
+      if (isLowBalance || isHighUsage) {
+        result.push({
+          ...accountData,
+          name: entry?.name || accountData.accountId,
+          platform: accountData.platform || platform
+        })
+      }
+    })
+  })
+
+  return result
+})
+
+const formatCurrencyUsd = (amount) => {
+  const value = Number(amount)
+  if (!Number.isFinite(value)) return '$0.00'
+  if (value >= 1) return `$${value.toFixed(2)}`
+  if (value >= 0.01) return `$${value.toFixed(3)}`
+  return `$${value.toFixed(6)}`
+}
+
+const formatLastUpdate = (isoString) => {
+  if (!isoString) return '未知'
+  const date = new Date(isoString)
+  if (Number.isNaN(date.getTime())) return '未知'
+  return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+}
+
+const loadBalanceSummary = async () => {
+  loadingBalanceSummary.value = true
+  const response = await getBalanceSummaryApi()
+  if (response?.success) {
+    balanceSummary.value = response.data || {
+      totalBalance: 0,
+      totalCost: 0,
+      lowBalanceCount: 0,
+      platforms: {}
+    }
+    balanceSummaryUpdatedAt.value = new Date().toISOString()
+  } else if (response?.message) {
+    console.debug('加载余额汇总失败:', response.message)
+    showToast('加载余额汇总失败', 'error')
+  }
+  loadingBalanceSummary.value = false
+}
 
 // 自动刷新相关
 const autoRefreshEnabled = ref(false)
@@ -673,14 +946,17 @@ const chartColors = computed(() => ({
   legend: isDarkMode.value ? '#e5e7eb' : '#374151'
 }))
 
-// 格式化数字
-function formatNumber(num) {
-  if (num >= 1000000) {
-    return (num / 1000000).toFixed(2) + 'M'
-  } else if (num >= 1000) {
-    return (num / 1000).toFixed(2) + 'K'
+function formatCostValue(cost) {
+  if (!Number.isFinite(cost)) {
+    return '$0.000000'
   }
-  return num.toString()
+  if (cost >= 1) {
+    return `$${cost.toFixed(2)}`
+  }
+  if (cost >= 0.01) {
+    return `$${cost.toFixed(3)}`
+  }
+  return `$${cost.toFixed(6)}`
 }
 
 // 计算百分比
@@ -806,15 +1082,15 @@ function createUsageTrendChart() {
       {
         label: '输入Token',
         data: inputData,
-        borderColor: 'rgb(102, 126, 234)',
-        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+        borderColor: themeStore.currentColorScheme.primary,
+        backgroundColor: `${themeStore.currentColorScheme.primary}1a`,
         tension: 0.3
       },
       {
         label: '输出Token',
         data: outputData,
-        borderColor: 'rgb(240, 147, 251)',
-        backgroundColor: 'rgba(240, 147, 251, 0.1)',
+        borderColor: themeStore.currentColorScheme.accent,
+        backgroundColor: `${themeStore.currentColorScheme.accent}1a`,
         tension: 0.3
       },
       {
@@ -827,8 +1103,8 @@ function createUsageTrendChart() {
       {
         label: '缓存读取Token',
         data: cacheReadData,
-        borderColor: 'rgb(147, 51, 234)',
-        backgroundColor: 'rgba(147, 51, 234, 0.1)',
+        borderColor: themeStore.currentColorScheme.secondary,
+        backgroundColor: `${themeStore.currentColorScheme.secondary}1a`,
         tension: 0.3
       },
       {
@@ -943,6 +1219,7 @@ function createUsageTrendChart() {
           type: 'linear',
           display: true,
           position: 'left',
+          min: 0,
           title: {
             display: true,
             text: 'Token数量',
@@ -962,6 +1239,7 @@ function createUsageTrendChart() {
           type: 'linear',
           display: true,
           position: 'right',
+          min: 0,
           title: {
             display: true,
             text: '请求数',
@@ -980,7 +1258,8 @@ function createUsageTrendChart() {
         y2: {
           type: 'linear',
           display: false, // 隐藏费用轴，在tooltip中显示
-          position: 'right'
+          position: 'right',
+          min: 0
         }
       }
     }
@@ -1160,6 +1439,7 @@ function createApiKeysUsageTrendChart() {
         },
         y: {
           beginAtZero: true,
+          min: 0,
           title: {
             display: true,
             text: apiKeysTrendMetric.value === 'tokens' ? 'Token 数量' : '请求次数',
@@ -1187,6 +1467,187 @@ async function updateApiKeysUsageTrendChart() {
   createApiKeysUsageTrendChart()
 }
 
+function createAccountUsageTrendChart() {
+  if (!accountUsageTrendChart.value) return
+
+  if (accountUsageTrendChartInstance) {
+    accountUsageTrendChartInstance.destroy()
+  }
+
+  const trend = accountUsageTrendData.value?.data || []
+  const topAccounts = accountUsageTrendData.value?.topAccounts || []
+
+  const colors = [
+    '#2563EB',
+    '#059669',
+    '#D97706',
+    '#DC2626',
+    '#7C3AED',
+    '#F472B6',
+    '#0EA5E9',
+    '#F97316',
+    '#6366F1',
+    '#22C55E'
+  ]
+
+  const datasets = topAccounts.map((accountId, index) => {
+    const dataPoints = trend.map((item) => {
+      if (!item.accounts || !item.accounts[accountId]) return 0
+      return item.accounts[accountId].cost || 0
+    })
+
+    const accountName =
+      trend.find((item) => item.accounts && item.accounts[accountId])?.accounts[accountId]?.name ||
+      `账号 ${String(accountId).slice(0, 6)}`
+
+    return {
+      label: accountName,
+      data: dataPoints,
+      borderColor: colors[index % colors.length],
+      backgroundColor: colors[index % colors.length] + '20',
+      tension: 0.4,
+      fill: false
+    }
+  })
+
+  const labelField = trend[0]?.date ? 'date' : 'hour'
+
+  const chartData = {
+    labels: trend.map((item) => {
+      if (item.label) {
+        return item.label
+      }
+
+      if (labelField === 'hour') {
+        const date = new Date(item.hour)
+        const month = String(date.getMonth() + 1).padStart(2, '0')
+        const day = String(date.getDate()).padStart(2, '0')
+        const hour = String(date.getHours()).padStart(2, '0')
+        return `${month}/${day} ${hour}:00`
+      }
+
+      if (item.date && item.date.includes('-')) {
+        const parts = item.date.split('-')
+        if (parts.length >= 3) {
+          return `${parts[1]}/${parts[2]}`
+        }
+      }
+
+      return item.date
+    }),
+    datasets
+  }
+
+  const topAccountIds = topAccounts
+
+  accountUsageTrendChartInstance = new Chart(accountUsageTrendChart.value, {
+    type: 'line',
+    data: chartData,
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {
+        mode: 'index',
+        intersect: false
+      },
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: {
+            padding: 20,
+            usePointStyle: true,
+            font: {
+              size: 12
+            },
+            color: chartColors.value.legend
+          }
+        },
+        tooltip: {
+          mode: 'index',
+          intersect: false,
+          itemSort: (a, b) => b.parsed.y - a.parsed.y,
+          callbacks: {
+            label: function (context) {
+              const label = context.dataset.label || ''
+              const value = context.parsed.y || 0
+              const dataIndex = context.dataIndex
+              const datasetIndex = context.datasetIndex
+              const accountId = topAccountIds[datasetIndex]
+              const dataPoint = accountUsageTrendData.value.data[dataIndex]
+              const accountDetail = dataPoint?.accounts?.[accountId]
+
+              const allValues = context.chart.data.datasets
+                .map((dataset, idx) => ({
+                  value: dataset.data[dataIndex] || 0,
+                  index: idx
+                }))
+                .sort((a, b) => b.value - a.value)
+
+              const rank = allValues.findIndex((item) => item.index === datasetIndex) + 1
+              let rankIcon = ''
+              if (rank === 1) rankIcon = '🥇 '
+              else if (rank === 2) rankIcon = '🥈 '
+              else if (rank === 3) rankIcon = '🥉 '
+
+              const formattedCost = accountDetail?.formattedCost || formatCostValue(value)
+              const requests = accountDetail?.requests || 0
+
+              return `${rankIcon}${label}: ${formattedCost} / ${requests.toLocaleString()} 次`
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          type: 'category',
+          display: true,
+          title: {
+            display: true,
+            text: trendGranularity.value === 'hour' ? '时间' : '日期',
+            color: chartColors.value.text
+          },
+          ticks: {
+            color: chartColors.value.text
+          },
+          grid: {
+            color: chartColors.value.grid
+          }
+        },
+        y: {
+          beginAtZero: true,
+          min: 0,
+          title: {
+            display: true,
+            text: '消耗金额 (USD)',
+            color: chartColors.value.text
+          },
+          ticks: {
+            callback: (value) => formatCostValue(Number(value)),
+            color: chartColors.value.text
+          },
+          grid: {
+            color: chartColors.value.grid
+          }
+        }
+      }
+    }
+  })
+}
+
+async function handleAccountUsageGroupChange(group) {
+  if (accountUsageGroup.value === group || accountTrendUpdating.value) {
+    return
+  }
+  accountTrendUpdating.value = true
+  try {
+    await setAccountUsageGroup(group)
+    await nextTick()
+    createAccountUsageTrendChart()
+  } finally {
+    accountTrendUpdating.value = false
+  }
+}
+
 // 监听数据变化更新图表
 watch(dashboardModelStats, () => {
   nextTick(() => createModelUsageChart())
@@ -1200,13 +1661,17 @@ watch(apiKeysTrendData, () => {
   nextTick(() => createApiKeysUsageTrendChart())
 })
 
+watch(accountUsageTrendData, () => {
+  nextTick(() => createAccountUsageTrendChart())
+})
+
 // 刷新所有数据
 async function refreshAllData() {
   if (isRefreshing.value) return
 
   isRefreshing.value = true
   try {
-    await Promise.all([loadDashboardData(), refreshChartsData()])
+    await Promise.all([loadDashboardData(), refreshChartsData(), loadBalanceSummary()])
   } finally {
     isRefreshing.value = false
   }
@@ -1283,8 +1748,22 @@ watch(isDarkMode, () => {
     createModelUsageChart()
     createUsageTrendChart()
     createApiKeysUsageTrendChart()
+    createAccountUsageTrendChart()
   })
 })
+
+// 监听色系变化，重新创建图表
+watch(
+  () => themeStore.colorScheme,
+  () => {
+    nextTick(() => {
+      createModelUsageChart()
+      createUsageTrendChart()
+      createApiKeysUsageTrendChart()
+      createAccountUsageTrendChart()
+    })
+  }
+)
 
 // 初始化
 onMounted(async () => {
@@ -1296,6 +1775,7 @@ onMounted(async () => {
   createModelUsageChart()
   createUsageTrendChart()
   createApiKeysUsageTrendChart()
+  createAccountUsageTrendChart()
 })
 
 // 清理
@@ -1310,6 +1790,9 @@ onUnmounted(() => {
   }
   if (apiKeysUsageTrendChartInstance) {
     apiKeysUsageTrendChartInstance.destroy()
+  }
+  if (accountUsageTrendChartInstance) {
+    accountUsageTrendChartInstance.destroy()
   }
 })
 </script>

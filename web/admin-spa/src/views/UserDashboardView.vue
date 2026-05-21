@@ -56,6 +56,17 @@
                 >
                   Usage Stats
                 </button>
+                <button
+                  :class="[
+                    'rounded-md px-3 py-2 text-sm font-medium',
+                    activeTab === 'tutorial'
+                      ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
+                      : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+                  ]"
+                  @click="handleTabChange('tutorial')"
+                >
+                  Tutorial
+                </button>
               </div>
             </div>
           </div>
@@ -315,6 +326,11 @@
       <div v-else-if="activeTab === 'usage'">
         <UserUsageStats />
       </div>
+
+      <!-- Tutorial Tab -->
+      <div v-else-if="activeTab === 'tutorial'" class="space-y-6">
+        <TutorialView />
+      </div>
     </main>
   </div>
 </template>
@@ -324,10 +340,11 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { useThemeStore } from '@/stores/theme'
-import { showToast } from '@/utils/toast'
+import { showToast, formatNumber, formatDate } from '@/utils/tools'
 import ThemeToggle from '@/components/common/ThemeToggle.vue'
 import UserApiKeysManager from '@/components/user/UserApiKeysManager.vue'
 import UserUsageStats from '@/components/user/UserUsageStats.vue'
+import TutorialView from '@/views/TutorialView.vue'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -336,26 +353,6 @@ const themeStore = useThemeStore()
 const activeTab = ref('overview')
 const userProfile = ref(null)
 const apiKeysStats = ref({ active: 0, deleted: 0 })
-
-const formatNumber = (num) => {
-  if (num >= 1000000) {
-    return (num / 1000000).toFixed(1) + 'M'
-  } else if (num >= 1000) {
-    return (num / 1000).toFixed(1) + 'K'
-  }
-  return num.toString()
-}
-
-const formatDate = (dateString) => {
-  if (!dateString) return null
-  return new Date(dateString).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  })
-}
 
 const handleTabChange = (tab) => {
   activeTab.value = tab
@@ -371,7 +368,6 @@ const handleLogout = async () => {
     showToast('Logged out successfully', 'success')
     router.push('/user-login')
   } catch (error) {
-    console.error('Logout error:', error)
     showToast('Logout failed', 'error')
   }
 }
@@ -414,7 +410,3 @@ onMounted(() => {
   loadApiKeysStats()
 })
 </script>
-
-<style scoped>
-/* 组件特定样式 */
-</style>

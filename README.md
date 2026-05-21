@@ -1,5 +1,10 @@
 # Claude Relay Service
 
+> [!CAUTION]
+> **安全更新通知**：v1.1.248 及以下版本存在严重的管理员认证绕过漏洞，攻击者可未授权访问管理面板。
+>
+> **请立即更新到 v1.1.249+ 版本**，或迁移到新一代项目 **[CRS 2.0 (sub2api)](https://github.com/Wei-Shaw/sub2api)**
+
 <div align="center">
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -11,16 +16,22 @@
 
 **🔐 自行搭建Claude API中转服务，支持多账户管理**
 
-[English](#english) • [中文文档](#中文文档) • [📸 界面预览](docs/preview.md) • [📢 公告频道](https://t.me/claude_relay_service)
+[English](README_EN.md) • [快速开始](https://pincc.ai/) • [演示站点](https://demo.pincc.ai/admin-next/login) • [公告频道](https://t.me/claude_relay_service)
 
 </div>
 
 ---
 
-## ⭐ 如果觉得有用，点个Star支持一下吧！
+## 💎 Claude/Codex 拼车服务推荐
 
-> 开源不易，你的Star是我持续更新的动力 🚀  
-> 欢迎加入 [Telegram 公告频道](https://t.me/claude_relay_service) 获取最新动态
+<div align="center">
+
+| 平台 | 服务 | 介绍 |
+|:---|:---|:---|
+| **[pincc.ai](https://pincc.ai/)** | <small>✅ Claude Code<br>✅ Codex CLI</small> | 提供稳定的 Codex CLI 拼车服务<br><br> **全新上线 2API 渠道**：接入CC的效果媲美官方 Anthropic Console 账号，暂不支持 PDF 识别功能 <br>💰 单价：0.8元=1美金额度 |
+
+
+</div>
 
 ---
 
@@ -42,26 +53,13 @@
 
 如果有以上困惑，那这个项目可能适合你。
 
-> 💡 **热心网友福利**  
-> 热心网友正在用本项目，正在拼车官方Claude Code Max 20X 200刀版本，是现在最稳定的方案。  
-> 有需要自取: [https://ctok.ai/](https://ctok.ai/)
-
 ### 适合的场景
 
-✅ **找朋友拼车**: 三五好友一起分摊Claude Code Max订阅，Opus爽用  
+✅ **找朋友拼车**: 三五好友一起分摊Claude Code Max订阅  
 ✅ **隐私敏感**: 不想让第三方镜像看到你的对话内容  
 ✅ **技术折腾**: 有基本的技术基础，愿意自己搭建和维护  
 ✅ **稳定需求**: 需要长期稳定的Claude访问，不想受制于镜像站  
 ✅ **地区受限**: 无法直接访问Claude官方服务
-
-### 不适合的场景
-
-❌ **纯小白**: 完全不懂技术，连服务器都不会买  
-❌ **偶尔使用**: 一个月用不了几次，没必要折腾  
-❌ **注册问题**: 无法自行注册Claude账号  
-❌ **支付问题**: 没有支付渠道订阅Claude Code
-
-**如果你只是普通用户，对隐私要求不高，随便玩玩、想快速体验 Claude，那选个你熟知的镜像站会更合适。**
 
 ---
 
@@ -83,8 +81,6 @@
 ---
 
 ## 🚀 核心功能
-
-> 📸 **[点击查看界面预览](docs/preview.md)** - 查看Web管理界面的详细截图
 
 ### 基础功能
 
@@ -134,13 +130,7 @@
 ### 快速安装
 
 ```bash
-# 下载并运行管理脚本
-curl -fsSL https://raw.githubusercontent.com/Wei-Shaw/claude-relay-service/main/scripts/manage.sh -o manage.sh
-chmod +x manage.sh
-./manage.sh install
-
-# 安装后可以使用 crs 命令管理服务
-crs  # 显示交互式菜单
+curl -fsSL https://pincc.ai/manage.sh -o manage.sh && chmod +x manage.sh && ./manage.sh install
 ```
 
 ### 脚本功能
@@ -298,60 +288,15 @@ npm run service:status
 
 ## 🐳 Docker 部署
 
-### 使用 Docker Hub 镜像（最简单）
+### Docker compose
 
-> 🚀 使用官方镜像，自动构建，始终保持最新版本
-
+#### 第一步：下载构建docker-compose.yml文件的脚本并执行
 ```bash
-# 拉取镜像（支持 amd64 和 arm64）
-docker pull weishaw/claude-relay-service:latest
+curl -fsSL https://pincc.ai/crs-compose.sh -o crs-compose.sh && chmod +x crs-compose.sh && ./crs-compose.sh
+```
 
-# 使用 docker-compose
-# 创建 .env 文件用于 docker-compose 的环境变量：
-cat > .env << 'EOF'
-# 必填：安全密钥（请修改为随机值）
-JWT_SECRET=your-random-secret-key-at-least-32-chars
-ENCRYPTION_KEY=your-32-character-encryption-key
-
-# 可选：管理员凭据
-ADMIN_USERNAME=cr_admin
-ADMIN_PASSWORD=your-secure-password
-EOF
-
-# 创建 docker-compose.yml 文件：
-cat > docker-compose.yml << 'EOF'
-version: '3.8'
-services:
-  claude-relay:
-    image: weishaw/claude-relay-service:latest
-    container_name: claude-relay-service
-    restart: unless-stopped
-    ports:
-      - "3000:3000"
-    environment:
-      - JWT_SECRET=${JWT_SECRET}
-      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
-      - REDIS_HOST=redis
-      - ADMIN_USERNAME=${ADMIN_USERNAME:-}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
-    volumes:
-      - ./logs:/app/logs
-      - ./data:/app/data
-    depends_on:
-      - redis
-
-  redis:
-    image: redis:7-alpine
-    container_name: claude-relay-redis
-    restart: unless-stopped
-    volumes:
-      - redis_data:/data
-
-volumes:
-  redis_data:
-EOF
-
-# 启动服务
+#### 第二步：启动
+```bash
 docker-compose up -d
 ```
 
@@ -364,7 +309,6 @@ docker-compose.yml 已包含：
 - ✅ Redis数据库
 - ✅ 健康检查
 - ✅ 自动重启
-- ✅ 所有配置通过环境变量管理
 
 ### 环境变量说明
 
@@ -429,6 +373,31 @@ docker-compose.yml 已包含：
 
 **注意**: 如果你在国内，这一步可能需要科学上网。
 
+### 2.1 临时暂停（503/5xx）与账号级 TTL 覆盖
+
+系统会在上游异常时临时暂停账号路由，默认由全局配置控制（见 `.env.example`）：
+
+- `UPSTREAM_ERROR_503_TTL_SECONDS`
+- `UPSTREAM_ERROR_5XX_TTL_SECONDS`
+- `UPSTREAM_ERROR_OVERLOAD_TTL_SECONDS`
+- `UPSTREAM_ERROR_AUTH_TTL_SECONDS`
+- `UPSTREAM_ERROR_TIMEOUT_TTL_SECONDS`
+
+在管理后台编辑 **Claude 官方 OAuth 账号** 时，可做账号级覆盖：
+
+- `禁用该账号临时冷却`：该账号不再因 503/5xx 进入临时暂停
+- `503 冷却秒数`：留空=跟随全局，`0`=关闭该账号 503 冷却
+- `5xx 冷却秒数`：留空=跟随全局，`0`=关闭该账号 5xx 冷却
+
+优先级从高到低：
+
+1. 账号级“禁用临时冷却”
+2. 账号级 503/5xx 冷却秒数
+3. 代码调用时传入的自定义 TTL（若有）
+4. 全局环境变量默认值
+
+账户列表会显示“不可路由原因”，包含错误类型、HTTP 状态码、内部冷却总时长、剩余时间和预计恢复时间；点击 `重置状态` 可清除异常状态并恢复参与路由。
+
 ### 3. 创建API Key
 
 给每个使用者分配一个Key：
@@ -449,18 +418,74 @@ docker-compose.yml 已包含：
 
 **Claude Code 设置环境变量：**
 
+
+**使用标准 Claude 账号池**
+
+默认使用标准 Claude 账号池：
+
 ```bash
 export ANTHROPIC_BASE_URL="http://127.0.0.1:3000/api/" # 根据实际填写你服务器的ip地址或者域名
 export ANTHROPIC_AUTH_TOKEN="后台创建的API密钥"
 ```
 
-**Gemini CLI 设置环境变量：**
+**使用 Antigravity 账户池**
+
+适用于通过 Antigravity 渠道使用 Claude 模型（如 `claude-opus-4-5` 等）。
 
 ```bash
-export CODE_ASSIST_ENDPOINT="http://127.0.0.1:3000/gemini" # 根据实际填写你服务器的ip地址或者域名
-export GOOGLE_CLOUD_ACCESS_TOKEN="后台创建的API密钥"  # 使用相同的API密钥即可
-export GOOGLE_GENAI_USE_GCA="true"
+# 1. 设置 Base URL 为 Antigravity 专用路径
+export ANTHROPIC_BASE_URL="http://127.0.0.1:3000/antigravity/api/"
+
+# 2. 设置 API Key（在后台创建，权限需包含 'all' 或 'gemini'）
+export ANTHROPIC_AUTH_TOKEN="后台创建的API密钥"
+
+# 3. 指定模型名称（直接使用短名，无需前缀！）
+export ANTHROPIC_MODEL="claude-opus-4-5"
+
+# 4. 启动
+claude
 ```
+
+**VSCode Claude 插件配置：**
+
+如果使用 VSCode 的 Claude 插件，需要在 `~/.claude/config.json` 文件中配置：
+
+```json
+{
+    "primaryApiKey": "crs"
+}
+```
+
+如果该文件不存在，请手动创建。Windows 用户路径为 `C:\Users\你的用户名\.claude\config.json`。
+
+> 💡 **IntelliJ IDEA 用户推荐**：[Claude Code Plus](https://github.com/touwaeriol/claude-code-plus) - 将 Claude Code 直接集成到 IDE，支持代码理解、文件读写、命令执行。插件市场搜索 `Claude Code Plus` 即可安装。
+
+**Gemini CLI 设置环境变量：**
+
+**方式一（推荐）：通过 Gemini Assist API 方式访问**
+
+```bash
+CODE_ASSIST_ENDPOINT="http://127.0.0.1:3000/gemini"  # 根据实际填写你服务器的ip地址或者域名
+GOOGLE_CLOUD_ACCESS_TOKEN="后台创建的API密钥"
+GOOGLE_GENAI_USE_GCA="true"
+GEMINI_MODEL="gemini-2.5-pro" # 如果你有gemini3权限可以填： gemini-3-pro-preview
+```
+
+> **认证**：只能选 ```Login with Google``` 进行认证，如果跳 Google请删除 ```~/.gemini/settings.json``` 后再尝试启动```gemini```。  
+> **注意**：gemini-cli 控制台会提示 `Failed to fetch user info: 401 Unauthorized`，但使用不受任何影响。  
+
+**方式二：通过 Gemini API 方式访问**
+
+
+```bash
+GOOGLE_GEMINI_BASE_URL="http://127.0.0.1:3000/gemini"  # 根据实际填写你服务器的ip地址或者域名
+GEMINI_API_KEY="后台创建的API密钥"
+GEMINI_MODEL="gemini-2.5-pro" # 如果你有gemini3权限可以填： gemini-3-pro-preview
+```
+
+> **认证**：只能选 ```Use Gemini API Key``` 进行认证，如果提示 ```Enter Gemini API Key``` 请直接留空按回车。如果一打开就跳 Google请删除 ```~/.gemini/settings.json``` 后再尝试启动```gemini```。
+
+> 💡 **进阶用法**：想在 Claude Code 中直接使用 Gemini 3 模型？请参考 [Claude Code 调用 Gemini 3 模型指南](docs/claude-code-gemini3-guide/README.md)
 
 **使用 Claude Code：**
 
@@ -474,50 +499,161 @@ claude
 gemini  # 或其他 Gemini CLI 命令
 ```
 
-**Codex 设置环境变量：**
+**Codex 配置：**
 
-```bash
-export OPENAI_BASE_URL="http://127.0.0.1:3000/openai" # 根据实际填写你服务器的ip地址或者域名
-export OPENAI_API_KEY="后台创建的API密钥"  # 使用后台创建的API密钥
-```
-
-**Codex 额外配置：**
-
-需要在 `~/.codex/config.toml` 文件中添加以下配置来禁用响应存储：
+在 `~/.codex/config.toml` 文件**开头**添加以下配置：
 
 ```toml
+model_provider = "crs"
+model = "gpt-5.1-codex-max"
+model_reasoning_effort = "high"
 disable_response_storage = true
+preferred_auth_method = "apikey"
+
+[model_providers.crs]
+name = "crs"
+base_url = "http://127.0.0.1:3000/openai"  # 根据实际填写你服务器的ip地址或者域名
+wire_api = "responses"
+requires_openai_auth = true
 ```
+
+在 `~/.codex/auth.json` 文件中配置API密钥为 null：
+
+```json
+{
+    "OPENAI_API_KEY": "后台创建的API密钥"  
+}
+```
+
+> ⚠️ 在通过 Nginx 反向代理 CRS 服务并使用 Codex CLI 时，需要在 http 块中添加 underscores_in_headers on;。因为 Nginx 默认会移除带下划线的请求头（如 session_id），一旦该头被丢弃，多账号环境下的粘性会话功能将失效。
+
+**Droid CLI 配置：**
+
+Droid CLI 读取 `~/.factory/config.json`。可以在该文件中添加自定义模型以指向本服务的新端点：
+
+```json
+{
+  "custom_models": [
+    {
+      "model_display_name": "Opus 4.5 [crs]",
+      "model": "claude-opus-4-5-20251101",
+      "base_url": "http://127.0.0.1:3000/droid/claude",
+      "api_key": "后台创建的API密钥",
+      "provider": "anthropic",
+      "max_tokens": 64000
+    },
+    {
+      "model_display_name": "GPT5-Codex [crs]",
+      "model": "gpt-5-codex",
+      "base_url": "http://127.0.0.1:3000/droid/openai",
+      "api_key": "后台创建的API密钥",
+      "provider": "openai",
+      "max_tokens": 16384
+    },
+    {
+      "model_display_name": "Gemini-3-Pro [crs]",
+      "model": "gemini-3-pro-preview",
+      "base_url": "http://127.0.0.1:3000/droid/comm/v1/",
+      "api_key": "后台创建的API密钥",
+      "provider": "generic-chat-completion-api",
+      "max_tokens": 65535
+    },
+    {
+      "model_display_name": "GLM-4.6 [crs]",
+      "model": "glm-4.6",
+      "base_url": "http://127.0.0.1:3000/droid/comm/v1/",
+      "api_key": "后台创建的API密钥",
+      "provider": "generic-chat-completion-api",
+      "max_tokens": 202800
+    }
+  ]
+}
+```
+
+> 💡 将示例中的 `http://127.0.0.1:3000` 替换为你的服务域名或公网地址，并写入后台生成的 API 密钥（cr_ 开头）。
 
 ### 5. 第三方工具API接入
 
-本服务支持多种API端点格式，方便接入不同的第三方工具（如Cherry Studio等）：
+本服务支持多种API端点格式，方便接入不同的第三方工具（如Cherry Studio等）。
 
-**Claude标准格式：**
+#### Cherry Studio 接入示例
 
-```
-# 如果工具支持Claude标准格式，请使用该接口
-http://你的服务器:3000/claude/
-```
+Cherry Studio支持多种AI服务的接入，下面是不同账号类型的详细配置：
 
-**OpenAI兼容格式：**
+**1. Claude账号接入：**
 
 ```
-# 适用于需要OpenAI格式的第三方工具
-http://你的服务器:3000/openai/claude/v1/
+# API地址
+http://你的服务器:3000/claude
+
+# 模型ID示例
+claude-sonnet-4-5-20250929 # Claude Sonnet 4.5
+claude-opus-4-20250514     # Claude Opus 4
 ```
 
-**接入示例：**
+配置步骤：
+- 供应商类型选择"Anthropic"
+- API地址填入：`http://你的服务器:3000/claude`
+- API Key填入：后台创建的API密钥（cr_开头）
 
-- **Cherry Studio**: 使用OpenAI格式 `http://你的服务器:3000/openai/claude/v1/` 使用Codex cli API `http://你的服务器:3000/openai/responses`
-- **其他支持自定义API的工具**: 根据工具要求选择合适的格式
+**2. Gemini账号接入：**
+
+```
+# API地址
+http://你的服务器:3000/gemini
+
+# 模型ID示例
+gemini-2.5-pro             # Gemini 2.5 Pro
+```
+
+配置步骤：
+- 供应商类型选择"Gemini"
+- API地址填入：`http://你的服务器:3000/gemini`
+- API Key填入：后台创建的API密钥（cr_开头）
+
+**3. Codex接入：**
+
+```
+# API地址
+http://你的服务器:3000/openai
+
+# 模型ID（固定）
+gpt-5                      # Codex使用固定模型ID
+```
+
+配置步骤：
+- 供应商类型选择"Openai-Response"
+- API地址填入：`http://你的服务器:3000/openai`
+- API Key填入：后台创建的API密钥（cr_开头）
+- **重要**：Codex只支持Openai-Response标准
+
+
+**Cherry Studio 地址格式重要说明：**
+
+- ✅ **推荐格式**：`http://你的服务器:3000/claude`（不加结尾 `/`，让 Cherry Studio 自动加上 v1）
+- ✅ **等效格式**：`http://你的服务器:3000/claude/v1/`（手动指定 v1 并加结尾 `/`）
+- 💡 **说明**：这两种格式在 Cherry Studio 中是完全等效的
+- ❌ **错误格式**：`http://你的服务器:3000/claude/`（单独的 `/` 结尾会被 Cherry Studio 忽略 v1 版本）
+
+#### 其他第三方工具接入
+
+**接入要点：**
+
+- 所有账号类型都使用相同的API密钥（在后台统一创建）
+- 根据不同的路由前缀自动识别账号类型
+- `/claude/` - 使用Claude账号池
+- `/antigravity/api/` - 使用Antigravity账号池（推荐用于Claude Code）
+- `/droid/claude/` - 使用Droid类型Claude账号池（只建议api调用或Droid Cli中使用）
+- `/gemini/` - 使用Gemini账号池
+- `/openai/` - 使用Codex账号（只支持Openai-Response格式）
+- `/droid/openai/` - 使用Droid类型OpenAI兼容账号池（只建议api调用或Droid Cli中使用）
+- 支持所有标准API端点（messages、models等）
 
 **重要说明：**
 
-- 所有格式都支持相同的功能，仅是路径不同
-- `/api/v1/messages` = `/claude/v1/messages` = `/openai/claude/v1/messages`
-- 选择适合你使用工具的格式即可
-- 支持所有Claude API端点（messages、models等）
+- 确保在后台已添加对应类型的账号（Claude/Gemini/Codex）
+- API密钥可以通用，系统会根据路由自动选择账号类型
+- 建议为不同用户创建不同的API密钥便于使用统计
 
 ---
 
@@ -603,23 +739,6 @@ npm run service:status
    - 客户端验证失败时会返回403错误并记录详细信息
    - 通过日志可以查看实际的User-Agent格式，方便配置自定义客户端
 
-### 自定义客户端配置
-
-如需添加自定义客户端，可以修改 `config/config.js` 文件：
-
-```javascript
-clientRestrictions: {
-  predefinedClients: [
-    // ... 现有客户端配置
-    {
-      id: 'my_custom_client',
-      name: 'My Custom Client',
-      description: '我的自定义客户端',
-      userAgentPattern: /^MyClient\/[\d\.]+/i
-    }
-  ]
-}
-```
 
 ### 日志示例
 
@@ -666,13 +785,17 @@ redis-cli ping
 
 ## 🛠️ 进阶
 
-### 生产环境部署建议（重要！）
+### 反向代理部署指南
 
-**强烈建议使用Caddy反向代理（自动HTTPS）**
+在生产环境中，建议通过反向代理进行连接，以便使用自动 HTTPS、安全头部和性能优化。下面提供两种常用方案： **Caddy** 和 **Nginx Proxy Manager (NPM)**。
 
-建议使用Caddy作为反向代理，它会自动申请和更新SSL证书，配置更简单：
+---
 
-**1. 安装Caddy**
+## Caddy 方案
+
+Caddy 是一款自动管理 HTTPS 证书的 Web 服务器，配置简单、性能优秀，很适合不需要 Docker 环境的部署方案。
+
+**1. 安装 Caddy**
 
 ```bash
 # Ubuntu/Debian
@@ -688,23 +811,23 @@ sudo yum copr enable @caddy/caddy
 sudo yum install caddy
 ```
 
-**2. Caddy配置（超简单！）**
+**2. Caddy 配置**
 
-编辑 `/etc/caddy/Caddyfile`：
+编辑 `/etc/caddy/Caddyfile` ：
 
-```
+```caddy
 your-domain.com {
     # 反向代理到本地服务
     reverse_proxy 127.0.0.1:3000 {
-        # 支持流式响应（SSE）
+        # 支持流式响应或 SSE
         flush_interval -1
 
-        # 传递真实IP
+        # 传递真实 IP
         header_up X-Real-IP {remote_host}
         header_up X-Forwarded-For {remote_host}
         header_up X-Forwarded-Proto {scheme}
 
-        # 超时设置（适合长连接）
+        # 长读/写超时配置
         transport http {
             read_timeout 300s
             write_timeout 300s
@@ -722,42 +845,132 @@ your-domain.com {
 }
 ```
 
-**3. 启动Caddy**
+**3. 启动 Caddy**
 
 ```bash
-# 测试配置
 sudo caddy validate --config /etc/caddy/Caddyfile
-
-# 启动服务
 sudo systemctl start caddy
 sudo systemctl enable caddy
-
-# 查看状态
 sudo systemctl status caddy
 ```
 
-**4. 更新服务配置**
+**4. 服务配置**
 
-修改你的服务配置，让它只监听本地：
+Caddy 会自动管理 HTTPS，因此可以将服务限制在本地进行监听：
 
 ```javascript
 // config/config.js
 module.exports = {
   server: {
     port: 3000,
-    host: '127.0.0.1' // 只监听本地，通过nginx代理
+    host: '127.0.0.1' // 只监听本地
   }
-  // ... 其他配置
 }
 ```
 
-**Caddy优势：**
+**Caddy 特点**
 
-- 🔒 **自动HTTPS**: 自动申请和续期Let's Encrypt证书，零配置
-- 🛡️ **安全默认**: 默认启用现代安全协议和加密套件
-- 🚀 **流式支持**: 原生支持SSE/WebSocket等流式传输
-- 📊 **简单配置**: 配置文件极其简洁，易于维护
-- ⚡ **HTTP/2**: 默认启用HTTP/2，提升传输性能
+* 🔒 自动 HTTPS，零配置证书管理
+* 🛡️ 安全默认配置，启用现代 TLS 套件
+* ⚡ HTTP/2 和流式传输支持
+* 🔧 配置文件简洁，易于维护
+
+---
+
+## Nginx Proxy Manager (NPM) 方案
+
+Nginx Proxy Manager 通过图形化界面管理反向代理和 HTTPS 证书，並以 Docker 容器部署。
+
+**1. 在 NPM 创建新的 Proxy Host**
+
+Details 配置如下：
+
+| 项目                    | 设置                      |
+| --------------------- | ----------------------- |
+| Domain Names          | relay.example.com       |
+| Scheme                | http                    |
+| Forward Hostname / IP | 192.168.0.1 (docker 机器 IP) |
+| Forward Port          | 3000                    |
+| Block Common Exploits | ☑️                      |
+| Websockets Support    | ❌ **关闭**                |
+| Cache Assets          | ❌ **关闭**                |
+| Access List           | Publicly Accessible     |
+
+> 注意：
+> - 请确保 Claude Relay Service **监听 host 为 `0.0.0.0` 、容器 IP 或本机 IP**，以便 NPM 实现内网连接。
+> - **Websockets Support 和 Cache Assets 必须关闭**，否则会导致 SSE / 流式响应失败。
+
+**2. Custom locations**
+
+無需添加任何内容，保持为空。
+
+**3. SSL 设置**
+
+* **SSL Certificate**: Request a new SSL Certificate (Let's Encrypt) 或已有证书
+* ☑️ **Force SSL**
+* ☑️ **HTTP/2 Support**
+* ☑️ **HSTS Enabled**
+* ☑️ **HSTS Subdomains**
+
+**4. Advanced 配置**
+
+Custom Nginx Configuration 中添加以下内容：
+
+```nginx
+# 传递真实用户 IP
+proxy_set_header X-Real-IP $remote_addr;
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+proxy_set_header X-Forwarded-Proto $scheme;
+
+# 支持 WebSocket / SSE 等流式通信
+proxy_http_version 1.1;
+proxy_set_header Upgrade $http_upgrade;
+proxy_set_header Connection "upgrade";
+proxy_buffering off;
+
+# 长连接 / 超时设置（适合 AI 聊天流式传输）
+proxy_read_timeout 300s;
+proxy_send_timeout 300s;
+proxy_connect_timeout 30s;
+
+# ---- 安全性设置 ----
+# 严格 HTTPS 策略 (HSTS)
+add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+# 阻挡点击劫持与内容嗅探
+add_header X-Frame-Options "DENY" always;
+add_header X-Content-Type-Options "nosniff" always;
+
+# Referrer / Permissions 限制策略
+add_header Referrer-Policy "no-referrer-when-downgrade" always;
+add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+
+# 隐藏服务器信息（等效于 Caddy 的 `-Server`）
+proxy_hide_header Server;
+
+# ---- 性能微调 ----
+# 关闭代理端缓存，确保即时响应（SSE / Streaming）
+proxy_cache_bypass $http_upgrade;
+proxy_no_cache $http_upgrade;
+proxy_request_buffering off;
+```
+
+**4. 启动和验证**
+
+* 保存后等待 NPM 自动申请 Let's Encrypt 证书（如果有）。
+* Dashboard 中查看 Proxy Host 状态，确保显示为 "Online"。
+* 访问 `https://relay.example.com`，如果显示绿色锁图标即表示 HTTPS 正常。
+
+**NPM 特点**
+
+* 🔒 自动申请和续期证书
+* 🔧 图形化界面，方便管理多服务
+* ⚡ 原生支持 HTTP/2 / HTTPS
+* 🚀 适合 Docker 容器部署
+
+---
+
+上述两种方案均可用于生产部署。
 
 ---
 
