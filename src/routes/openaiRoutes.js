@@ -973,10 +973,312 @@ router.post('/v1/responses/compact', authenticateApiKey, handleResponses)
 
 // ======== 🎨 图片生成端点 (gpt-image-*) ========
 
-// 图片生成请求处理器 — 仅使用 openai-responses 账户（需要 API Key 直接访问 OpenAI Images API）
-const handleImageGeneration = async (req, res) => {
-  let accountId = null
+// Responses API 桥接模型（用于 OAuth 账户通过 chatgpt.com 生成图片）
+const IMAGE_BRIDGE_MODEL = 'gpt-5.4-mini'
 
+// 将 Images API 请求转换为 Responses API 格式（参考 sub2 的实现）
+function buildImageResponsesRequest(body, isEdit = false) {
+  const prompt = body.prompt || ''
+  const imageModel = body.model || 'gpt-image-1'
+
+  // 构建 input content
+  const contentParts = []
+  if (prompt) {
+    contentParts.push({ type: 'input_text', text: prompt })
+  }
+
+  // 构建 tool 规格
+  const tool = {
+    type: 'image_generation',
+    action: isEdit ? 'edit' : 'generate',
+    model: imageModel
+  }
+  if (body.n) tool.n = body.n
+  if (body.size) tool.size = body.size
+  if (body.quality) tool.quality = body.quality
+  if (body.background) tool.background = body.background
+  if (body.output_format) tool.output_format = body.output_format
+  if (body.style) tool.style = body.style
+  if (body.moderation) tool.moderation = body.moderation
+  if (body.output_compression !== undefined) tool.output_compression = body.output_compression
+  if (body.partial_images !== undefined) tool.partial_images = body.partial_images
+
+  return {
+    model: IMAGE_BRIDGE_MODEL,
+    instructions: '',
+    stream: true,
+    store: false,
+    reasoning: { effort: 'medium', summary: 'auto' },
+    parallel_tool_calls: true,
+    include: ['reasoning.encrypted_content'],
+    tool_choice: { type: 'image_generation' },
+    input: [
+      {
+        type: 'message',
+        role: 'user',
+        content: contentParts
+      }
+    ],
+    tools: [tool]
+  }
+}
+
+// 从 SSE 流中收集图片数据，重建 Images API 响应
+async function collectImagesFromSSEStream(stream) {
+  return new Promise((resolve, reject) => {
+    const images = []
+    let createdAt = Math.floor(Date.now() / 1000)
+    let metadata = {}
+    let errorResult = null
+    let buffer = ''
+
+    stream.on('data', (chunk) => {
+      buffer += chunk.toString()
+
+      // 按双换行分割 SSE 事件
+      let idx
+      while ((idx = buffer.indexOf('\n\n')) !== -1) {
+        const event = buffer.slice(0, idx)
+        buffer = buffer.slice(idx + 2)
+
+        const lines = event.split('\n')
+        for (const line of lines) {
+          if (!line.startsWith('data:')) continue
+          const jsonStr = line.slice(5).trim()
+          if (!jsonStr || jsonStr === '[DONE]') continue
+
+          try {
+            const data = JSON.parse(jsonStr)
+
+            // 错误事件
+            if (data.error) {
+              errorResult = data.error
+              continue
+            }
+            if (data.type === 'response.failed' && data.response?.status_details?.error) {
+              errorResult = data.response.status_details.error
+              continue
+            }
+
+            // response.completed — 提取全部图片和元数据
+            if (data.type === 'response.completed' && data.response) {
+              if (data.response.created_at) {
+                createdAt = data.response.created_at
+              }
+              const output = data.response.output || []
+              for (const item of output) {
+                if (item.type === 'image_generation_call' && item.result) {
+                  images.push({
+                    b64_json: item.result,
+                    revised_prompt: item.revised_prompt || ''
+                  })
+                  if (item.size) metadata.size = item.size
+                  if (item.quality) metadata.quality = item.quality
+                  if (item.output_format) metadata.output_format = item.output_format
+                  if (item.background) metadata.background = item.background
+                }
+              }
+              // 从 tools 中提取元数据
+              const tools = data.response.tools || []
+              for (const t of tools) {
+                if (t.type === 'image_generation') {
+                  if (t.size) metadata.size = metadata.size || t.size
+                  if (t.quality) metadata.quality = metadata.quality || t.quality
+                  if (t.output_format)
+                    metadata.output_format = metadata.output_format || t.output_format
+                  if (t.model) metadata.model = t.model
+                }
+              }
+              // usage
+              if (data.response.tool_usage?.image_gen) {
+                metadata.usage = data.response.tool_usage.image_gen
+              }
+            }
+
+            // response.output_item.done — 单张图片完成（备用）
+            if (data.type === 'response.output_item.done' && data.item) {
+              const item = data.item
+              if (item.type === 'image_generation_call' && item.result) {
+                // 去重：只有 response.completed 没有提供图片时才用这里的数据
+                if (images.length === 0 || !images.some((img) => img.b64_json === item.result)) {
+                  images.push({
+                    b64_json: item.result,
+                    revised_prompt: item.revised_prompt || ''
+                  })
+                }
+              }
+            }
+          } catch (_e) {
+            // 忽略解析错误
+          }
+        }
+      }
+    })
+
+    stream.on('end', () => {
+      // 处理剩余 buffer
+      if (buffer.trim()) {
+        const lines = buffer.split('\n')
+        for (const line of lines) {
+          if (!line.startsWith('data:')) continue
+          const jsonStr = line.slice(5).trim()
+          if (!jsonStr || jsonStr === '[DONE]') continue
+          try {
+            const data = JSON.parse(jsonStr)
+            if (data.error) errorResult = data.error
+          } catch (_e) {
+            // ignore
+          }
+        }
+      }
+
+      if (errorResult) {
+        const err = new Error(errorResult.message || 'Image generation failed')
+        err.statusCode =
+          errorResult.code === 'moderation_blocked' ||
+          errorResult.type === 'image_generation_user_error'
+            ? 400
+            : 502
+        err.errorData = errorResult
+        return reject(err)
+      }
+
+      resolve({ images, createdAt, metadata })
+    })
+
+    stream.on('error', (err) => reject(err))
+  })
+}
+
+// 通过 chatgpt.com Responses API 桥接生成图片（OpenAI OAuth 账户）
+async function handleImageViaBridge(req, res, accessToken, account, apiKeyData) {
+  const body = req.body
+  const isEdit = req.path.includes('/edits')
+  const requestedModel = body.model || 'gpt-image-1'
+
+  // 构建 Responses API 请求体
+  const responsesBody = buildImageResponsesRequest(body, isEdit)
+
+  logger.info(
+    `🎨 Bridge: Transforming image request to Responses API - tool model: ${requestedModel}, bridge model: ${IMAGE_BRIDGE_MODEL}`
+  )
+
+  const headers = {
+    authorization: `Bearer ${accessToken}`,
+    'chatgpt-account-id': account.accountId || account.chatgptUserId || account.id,
+    host: 'chatgpt.com',
+    accept: 'text/event-stream',
+    'content-type': 'application/json'
+  }
+
+  const proxyAgent = createProxyAgent(account.proxy || null)
+  const axiosConfig = {
+    headers,
+    timeout: config.requestTimeout || 600000,
+    responseType: 'stream',
+    validateStatus: () => true
+  }
+
+  if (proxyAgent) {
+    axiosConfig.httpAgent = proxyAgent
+    axiosConfig.httpsAgent = proxyAgent
+    axiosConfig.proxy = false
+  }
+
+  const upstream = await axios.post(
+    'https://chatgpt.com/backend-api/codex/responses',
+    responsesBody,
+    axiosConfig
+  )
+
+  // 处理上游错误（非 200）
+  if (upstream.status !== 200) {
+    let errorData = null
+    try {
+      const chunks = []
+      await new Promise((resolve) => {
+        upstream.data.on('data', (chunk) => chunks.push(chunk))
+        upstream.data.on('end', resolve)
+        upstream.data.on('error', resolve)
+        setTimeout(resolve, 5000)
+      })
+      const raw = Buffer.concat(chunks).toString()
+      errorData = JSON.parse(raw)
+    } catch (_e) {
+      errorData = { error: { message: `Upstream error: ${upstream.status}` } }
+    }
+
+    if (upstream.status === 429) {
+      await unifiedOpenAIScheduler.markAccountRateLimited(account.id, 'openai', null, null)
+    }
+    return res.status(upstream.status).json(errorData)
+  }
+
+  // 收集 SSE 流中的图片数据
+  const { images, createdAt, metadata } = await collectImagesFromSSEStream(upstream.data)
+
+  if (images.length === 0) {
+    return res.status(502).json({
+      error: {
+        message: 'No images generated from upstream',
+        type: 'api_error',
+        code: 'no_images'
+      }
+    })
+  }
+
+  // 根据 response_format 决定字段名
+  const responseFormat = body.response_format || 'b64_json'
+  const outputFormat = metadata.output_format || 'png'
+  const mimeMap = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp' }
+  const mimeType = mimeMap[outputFormat] || 'image/png'
+
+  const data = images.map((img) => {
+    const entry = {}
+    if (responseFormat === 'url') {
+      entry.url = `data:${mimeType};base64,${img.b64_json}`
+    } else {
+      entry.b64_json = img.b64_json
+    }
+    if (img.revised_prompt) {
+      entry.revised_prompt = img.revised_prompt
+    }
+    return entry
+  })
+
+  // 记录使用（图片数量）
+  try {
+    await apiKeyService.recordUsage(
+      apiKeyData.id,
+      0,
+      0,
+      0,
+      0,
+      requestedModel,
+      account.id,
+      'openai',
+      null,
+      createRequestDetailMeta(req, {
+        requestBody: body,
+        stream: false,
+        statusCode: 200
+      })
+    )
+  } catch (usageErr) {
+    logger.error('Failed to record image usage:', usageErr)
+  }
+
+  // 返回标准 Images API 响应
+  res.json({
+    created: createdAt,
+    data,
+    model: requestedModel,
+    usage: metadata.usage || { input_tokens: 0, output_tokens: 0, images: images.length }
+  })
+}
+
+// 图片生成请求处理器 — 支持 OpenAI OAuth 账户（桥接）和 openai-responses 账户（直接代理）
+const handleImageGeneration = async (req, res) => {
   try {
     const apiKeyData = req.apiKey || {}
 
@@ -995,7 +1297,6 @@ const handleImageGeneration = async (req, res) => {
 
     const requestedModel = req.body?.model || 'gpt-image-1'
 
-    // 验证模型必须是 gpt-image-* 系列
     if (
       typeof requestedModel !== 'string' ||
       !requestedModel.toLowerCase().startsWith('gpt-image-')
@@ -1009,7 +1310,6 @@ const handleImageGeneration = async (req, res) => {
       })
     }
 
-    // 验证 prompt 参数（generations 端点必需）
     if (req.path.includes('/generations') && !req.body?.prompt) {
       return res.status(400).json({
         error: {
@@ -1020,47 +1320,36 @@ const handleImageGeneration = async (req, res) => {
       })
     }
 
-    // 使用调度器选择 openai-responses 账户（仅 API Key 类型支持图片生成）
-    const result = await unifiedOpenAIScheduler.selectAccountForApiKey(
+    // 使用调度器选择账户（不限制类型，两种都可以用于图片生成）
+    const { accessToken, accountId, accountType, proxy, account } = await getOpenAIAuthToken(
       apiKeyData,
-      null, // 图片生成不需要粘性会话
-      requestedModel,
-      { accountTypeFilter: 'openai-responses' }
+      null,
+      requestedModel
     )
-
-    if (!result || !result.accountId) {
-      return res.status(402).json({
-        error: {
-          message:
-            'No available OpenAI API key account for image generation. Add an openai-responses account with API key access.',
-          type: 'insufficient_quota',
-          code: 'no_image_account'
-        }
-      })
-    }
-
-    accountId = result.accountId
-
-    const account = await openaiResponsesAccountService.getAccount(result.accountId)
-    if (!account) {
-      return res.status(500).json({
-        error: {
-          message: 'Failed to load account details',
-          type: 'api_error',
-          code: 'account_error'
-        }
-      })
-    }
 
     logger.info(
-      `🎨 Image generation request - Model: ${requestedModel}, Account: ${account.name} (${result.accountId})`
+      `🎨 Image generation - Model: ${requestedModel}, Account: ${account.name} (${accountId}), Type: ${accountType}`
     )
 
-    // 图片生成永远不使用 stream
-    req.body.stream = false
+    if (accountType === 'openai-responses') {
+      // openai-responses 账户：通过 relay service 直接代理到上游 Images API
+      req.body.stream = false
+      return await openaiResponsesRelayService.handleRequest(req, res, account, apiKeyData)
+    }
 
-    // 通过 openaiResponsesRelayService 转发请求
-    return await openaiResponsesRelayService.handleRequest(req, res, account, apiKeyData)
+    // openai OAuth 账户：通过 chatgpt.com Responses API 桥接
+    // 解析代理配置
+    let parsedProxy = proxy
+    if (typeof parsedProxy === 'string') {
+      try {
+        parsedProxy = JSON.parse(parsedProxy)
+      } catch (_e) {
+        parsedProxy = null
+      }
+    }
+    const accountWithProxy = { ...account, proxy: parsedProxy }
+
+    return await handleImageViaBridge(req, res, accessToken, accountWithProxy, apiKeyData)
   } catch (error) {
     logger.error('❌ Image generation request failed:', error)
     const status = error.statusCode || error.response?.status || 500
