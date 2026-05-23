@@ -56,10 +56,7 @@ class ModelService {
           'gpt-5.3-codex',
           'gpt-5.3-codex-spark',
           'gpt-5.4',
-          'gpt-5.4-pro',
-          'gpt-image-1',
-          'gpt-image-1.5',
-          'gpt-image-2'
+          'gpt-5.4-pro'
         ]
       },
       gemini: {
