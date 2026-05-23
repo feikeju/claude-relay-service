@@ -413,20 +413,41 @@ install_service() {
         fi
     fi
     
+    # 确定源目录（manage.sh 所在的 scripts/ 的父目录，必须在 cd 之前）
+    local source_dir
+    local script_path=""
+    if command_exists realpath; then
+        script_path="$(realpath "$0" 2>/dev/null)"
+    elif command_exists readlink && readlink -f "$0" >/dev/null 2>&1; then
+        script_path="$(readlink -f "$0")"
+    else
+        script_path="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+    fi
+    source_dir="$(cd "$(dirname "$script_path")/.." && pwd)"
+
+    if [ ! -f "$source_dir/package.json" ]; then
+        print_error "无法定位源代码目录，请确保从项目内的 scripts/manage.sh 执行"
+        return 1
+    fi
+
     # 创建安装目录
     mkdir -p "$INSTALL_DIR"
-    
-    # 克隆项目
-    print_info "克隆项目代码..."
+
+    # 复制项目文件
+    print_info "复制项目代码..."
     if [ -d "$APP_DIR" ]; then
         rm -rf "$APP_DIR"
     fi
-    
-    if ! git clone https://github.com/Wei-Shaw/claude-relay-service.git "$APP_DIR"; then
-        print_error "克隆项目失败"
-        return 1
+
+    mkdir -p "$APP_DIR"
+    if command_exists rsync; then
+        rsync -a --exclude='.git/' --exclude='node_modules/' "$source_dir/" "$APP_DIR/"
+    else
+        cp -r "$source_dir"/* "$APP_DIR/" 2>/dev/null
+        cp -r "$source_dir"/.[!.]* "$APP_DIR/" 2>/dev/null || true
+        rm -rf "$APP_DIR/.git" "$APP_DIR/node_modules" 2>/dev/null
     fi
-    
+
     # 进入项目目录
     cd "$APP_DIR"
     
@@ -473,60 +494,18 @@ EOF
     print_info "运行初始化设置..."
     npm run setup
     
-    # 获取预构建的前端文件
-    print_info "获取预构建的前端文件..."
-    
-    # 创建目标目录
-    mkdir -p web/admin-spa/dist
-    
-    # 从 web-dist 分支获取构建好的文件
-    if git ls-remote --heads origin web-dist | grep -q web-dist; then
-        print_info "从 web-dist 分支下载前端文件..."
-        
-        # 创建临时目录用于 clone
-        TEMP_CLONE_DIR=$(mktemp -d)
-        
-        # 使用 sparse-checkout 来只获取需要的文件
-        git clone --depth 1 --branch web-dist --single-branch \
-            https://github.com/Wei-Shaw/claude-relay-service.git \
-            "$TEMP_CLONE_DIR" 2>/dev/null || {
-            # 如果 HTTPS 失败，尝试使用当前仓库的 remote URL
-            REPO_URL=$(git config --get remote.origin.url)
-            git clone --depth 1 --branch web-dist --single-branch "$REPO_URL" "$TEMP_CLONE_DIR"
-        }
-        
-        # 复制文件到目标目录（排除 .git 和 README.md）
-        rsync -av --exclude='.git' --exclude='README.md' "$TEMP_CLONE_DIR/" web/admin-spa/dist/ 2>/dev/null || {
-            # 如果没有 rsync，使用 cp
-            cp -r "$TEMP_CLONE_DIR"/* web/admin-spa/dist/ 2>/dev/null
-            rm -rf web/admin-spa/dist/.git 2>/dev/null
-            rm -f web/admin-spa/dist/README.md 2>/dev/null
-        }
-        
-        # 清理临时目录
-        rm -rf "$TEMP_CLONE_DIR"
-        
-        print_success "前端文件下载完成"
+    # 前端文件（已随代码复制，检查是否存在预构建文件）
+    if [ -d "$APP_DIR/web/admin-spa/dist" ] && [ -f "$APP_DIR/web/admin-spa/dist/index.html" ]; then
+        print_success "前端文件已就绪"
+    elif [ -f "$APP_DIR/web/admin-spa/package.json" ] && command_exists npm; then
+        print_info "未找到预构建前端文件，开始本地构建..."
+        cd "$APP_DIR/web/admin-spa"
+        npm install
+        npm run build
+        cd "$APP_DIR"
+        print_success "前端本地构建完成"
     else
-        print_warning "web-dist 分支不存在，尝试本地构建..."
-        
-        # 检查是否有 Node.js 和 npm
-        if command_exists npm; then
-            # 回退到原始构建方式
-            if [ -f "web/admin-spa/package.json" ]; then
-                print_info "开始本地构建前端..."
-                cd web/admin-spa
-                npm install
-                npm run build
-                cd ../..
-                print_success "前端本地构建完成"
-            else
-                print_error "无法找到前端项目文件"
-            fi
-        else
-            print_error "无法获取前端文件，且本地环境不支持构建"
-            print_info "请确保仓库已正确配置 web-dist 分支"
-        fi
+        print_warning "未找到前端文件，管理界面可能不可用"
     fi
     
     # 创建软链接
@@ -614,10 +593,11 @@ update_service() {
     if command_exists rsync; then
         rsync -a --delete \
             --exclude='.env' \
+            --exclude='.env.backup.*' \
             --exclude='logs/' \
             --exclude='node_modules/' \
             --exclude='data/init.json' \
-            --exclude='.env.backup.*' \
+            --exclude='config/config.js' \
             --exclude='.pid' \
             --exclude='.git/' \
             "$source_dir/" "$APP_DIR/"
@@ -626,6 +606,7 @@ update_service() {
         local tmp_backup=$(mktemp -d)
         [ -f "$APP_DIR/.env" ] && cp "$APP_DIR/.env" "$tmp_backup/"
         [ -f "$APP_DIR/data/init.json" ] && { mkdir -p "$tmp_backup/data"; cp "$APP_DIR/data/init.json" "$tmp_backup/data/"; }
+        [ -f "$APP_DIR/config/config.js" ] && { mkdir -p "$tmp_backup/config"; cp "$APP_DIR/config/config.js" "$tmp_backup/config/"; }
         [ -d "$APP_DIR/logs" ] && cp -r "$APP_DIR/logs" "$tmp_backup/"
 
         # 复制源文件（排除 .git 和 node_modules）
@@ -636,6 +617,7 @@ update_service() {
         # 恢复备份
         [ -f "$tmp_backup/.env" ] && cp "$tmp_backup/.env" "$APP_DIR/"
         [ -f "$tmp_backup/data/init.json" ] && cp "$tmp_backup/data/init.json" "$APP_DIR/data/"
+        [ -f "$tmp_backup/config/config.js" ] && cp "$tmp_backup/config/config.js" "$APP_DIR/config/"
         [ -d "$tmp_backup/logs" ] && cp -r "$tmp_backup/logs" "$APP_DIR/"
         rm -rf "$tmp_backup"
     fi
@@ -688,21 +670,15 @@ update_service() {
         echo -e "当前版本: ${GREEN}$(cat "$APP_DIR/VERSION")${NC}"
     fi
     
-    # 显示最新的提交信息
-    local latest_commit=$(git log -1 --oneline 2>/dev/null)
-    if [ -n "$latest_commit" ]; then
-        echo -e "最新提交: ${GREEN}$latest_commit${NC}"
-    fi
-    
     # 显示备份信息
     echo -e "\n${YELLOW}配置文件备份：${NC}"
     ls -la .env.backup.* 2>/dev/null | tail -3 || echo "  无备份文件"
-    
+
     # 提醒用户检查配置
     echo -e "\n${YELLOW}提示：${NC}"
-    echo "  - 配置文件已自动备份"
-    echo "  - 如有本地修改已保存到备份分支"
-    echo "  - 建议检查 .env 和 config/config.js 配置"
+    echo "  - 配置文件（.env、config/config.js、data/init.json）已自动保留"
+    echo "  - .env 备份文件可在需要时恢复"
+    echo "  - 源目录: $source_dir"
     
     echo -e "\n${BLUE}==================${NC}"
 }
