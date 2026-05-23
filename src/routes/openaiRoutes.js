@@ -1,5 +1,6 @@
 const express = require('express')
 const axios = require('axios')
+const multer = require('multer')
 const router = express.Router()
 const logger = require('../utils/logger')
 const config = require('../../config/config')
@@ -973,21 +974,94 @@ router.post('/v1/responses/compact', authenticateApiKey, handleResponses)
 
 // ======== 🎨 图片生成端点 (gpt-image-*) ========
 
+const imageUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024 }
+}).fields([
+  { name: 'image', maxCount: 10 },
+  { name: 'image[]', maxCount: 10 },
+  { name: 'mask', maxCount: 1 }
+])
+
+function parseImageMultipart(req, res, next) {
+  const ct = (req.headers['content-type'] || '').toLowerCase()
+  if (!ct.startsWith('multipart/form-data')) return next()
+
+  imageUpload(req, res, (err) => {
+    if (err) {
+      return res.status(400).json({
+        error: {
+          message: err.message || 'Failed to parse multipart form data',
+          type: 'invalid_request_error',
+          code: 'invalid_multipart'
+        }
+      })
+    }
+    next()
+  })
+}
+
+function uploadToDataURL(file) {
+  const mime = file.mimetype || 'image/png'
+  return `data:${mime};base64,${file.buffer.toString('base64')}`
+}
+
+function extractImageInputs(req) {
+  const inputImages = []
+  let maskImageURL = null
+
+  if (req.files) {
+    const imageFiles = [...(req.files['image'] || []), ...(req.files['image[]'] || [])]
+    for (const f of imageFiles) {
+      inputImages.push(uploadToDataURL(f))
+    }
+    const maskFiles = req.files['mask']
+    if (maskFiles && maskFiles.length > 0) {
+      maskImageURL = uploadToDataURL(maskFiles[0])
+    }
+  }
+
+  if (inputImages.length === 0 && req.body?.image) {
+    const images = Array.isArray(req.body.image) ? req.body.image : [req.body.image]
+    for (const img of images) {
+      if (typeof img === 'string' && img.trim()) inputImages.push(img.trim())
+      if (img?.image_url) inputImages.push(img.image_url)
+    }
+  }
+  if (inputImages.length === 0 && req.body?.images) {
+    const images = Array.isArray(req.body.images) ? req.body.images : []
+    for (const img of images) {
+      if (typeof img === 'string' && img.trim()) inputImages.push(img.trim())
+      if (img?.image_url) inputImages.push(img.image_url)
+    }
+  }
+
+  if (!maskImageURL && req.body?.mask) {
+    if (typeof req.body.mask === 'string' && req.body.mask.trim()) {
+      maskImageURL = req.body.mask.trim()
+    } else if (req.body.mask?.image_url) {
+      maskImageURL = req.body.mask.image_url
+    }
+  }
+
+  return { inputImages, maskImageURL }
+}
+
 // Responses API 桥接模型（用于 OAuth 账户通过 chatgpt.com 生成图片）
 const IMAGE_BRIDGE_MODEL = 'gpt-5.4-mini'
 
-// 将 Images API 请求转换为 Responses API 格式（参考 sub2 的实现）
-function buildImageResponsesRequest(body, isEdit = false) {
+function buildImageResponsesRequest(body, isEdit = false, inputImages = [], maskImageURL = null) {
   const prompt = body.prompt || ''
   const imageModel = body.model || 'gpt-image-1'
 
-  // 构建 input content
   const contentParts = []
   if (prompt) {
     contentParts.push({ type: 'input_text', text: prompt })
   }
+  for (const imageURL of inputImages) {
+    contentParts.push({ type: 'input_image', image_url: imageURL })
+  }
 
-  // 构建 tool 规格
   const tool = {
     type: 'image_generation',
     action: isEdit ? 'edit' : 'generate',
@@ -1002,6 +1076,9 @@ function buildImageResponsesRequest(body, isEdit = false) {
   if (body.moderation) tool.moderation = body.moderation
   if (body.output_compression !== undefined) tool.output_compression = body.output_compression
   if (body.partial_images !== undefined) tool.partial_images = body.partial_images
+  if (maskImageURL) {
+    tool.input_image_mask = { image_url: maskImageURL }
+  }
 
   return {
     model: IMAGE_BRIDGE_MODEL,
@@ -1150,17 +1227,26 @@ async function collectImagesFromSSEStream(stream) {
   })
 }
 
-// 通过 chatgpt.com Responses API 桥接生成图片（OpenAI OAuth 账户）
 async function handleImageViaBridge(req, res, accessToken, account, apiKeyData) {
   const body = req.body
   const isEdit = req.path.includes('/edits')
   const requestedModel = body.model || 'gpt-image-1'
 
-  // 构建 Responses API 请求体
-  const responsesBody = buildImageResponsesRequest(body, isEdit)
+  const { inputImages, maskImageURL } = extractImageInputs(req)
+  if (isEdit && inputImages.length === 0) {
+    return res.status(400).json({
+      error: {
+        message: 'Image input is required for image editing',
+        type: 'invalid_request_error',
+        code: 'missing_image'
+      }
+    })
+  }
+
+  const responsesBody = buildImageResponsesRequest(body, isEdit, inputImages, maskImageURL)
 
   logger.info(
-    `🎨 Bridge: Transforming image request to Responses API - tool model: ${requestedModel}, bridge model: ${IMAGE_BRIDGE_MODEL}`
+    `🎨 Bridge: Transforming image request to Responses API - tool model: ${requestedModel}, bridge model: ${IMAGE_BRIDGE_MODEL}, inputImages: ${inputImages.length}, hasMask: ${!!maskImageURL}`
   )
 
   const headers = {
@@ -1366,7 +1452,7 @@ const handleImageGeneration = async (req, res) => {
 }
 
 router.post('/v1/images/generations', authenticateApiKey, handleImageGeneration)
-router.post('/v1/images/edits', authenticateApiKey, handleImageGeneration)
+router.post('/v1/images/edits', authenticateApiKey, parseImageMultipart, handleImageGeneration)
 
 // 使用情况统计端点
 router.get('/usage', authenticateApiKey, async (req, res) => {
