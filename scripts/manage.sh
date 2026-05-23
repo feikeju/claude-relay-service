@@ -570,24 +570,8 @@ update_service() {
     fi
     
     print_info "更新 Claude Relay Service..."
-    
-    cd "$APP_DIR"
-    
-    # 保存当前运行状态
-    local was_running=false
-    if pgrep -f "node.*src/app.js" > /dev/null; then
-        was_running=true
-        print_info "检测到服务正在运行，将在更新后自动重启..."
-        stop_service
-    fi
-    
-    # 备份配置文件（只备份.env，config.js可从example恢复）
-    print_info "备份配置文件..."
-    if [ -f ".env" ]; then
-        cp .env .env.backup.$(date +%Y%m%d%H%M%S)
-    fi
-    
-    # 确定源目录（manage.sh 所在的 scripts/ 的父目录）
+
+    # 确定源目录（必须在 cd 之前，否则 $0 的相对路径会失效）
     local source_dir
     local script_path=""
     if command_exists realpath; then
@@ -607,6 +591,22 @@ update_service() {
     if [ "$source_dir" = "$APP_DIR" ]; then
         print_error "源目录与安装目录相同，无需更新"
         return 1
+    fi
+
+    cd "$APP_DIR"
+
+    # 保存当前运行状态
+    local was_running=false
+    if pgrep -f "node.*src/app.js" > /dev/null; then
+        was_running=true
+        print_info "检测到服务正在运行，将在更新后自动重启..."
+        stop_service
+    fi
+
+    # 备份配置文件（只备份.env，config.js可从example恢复）
+    print_info "备份配置文件..."
+    if [ -f ".env" ]; then
+        cp .env .env.backup.$(date +%Y%m%d%H%M%S)
     fi
 
     # 同步代码文件（保留配置和运行时数据）
